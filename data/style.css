@@ -123,12 +123,29 @@ h3 {
 }
 
 .role-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   font-size: 0.75rem;
   font-weight: 700;
   padding: 0.25rem 0.5rem;
   border-radius: 4px;
   background-color: var(--border-color);
   color: var(--text-muted);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.role-badge:disabled {
+  cursor: not-allowed;
+  opacity: 0.8;
+}
+
+.role-lock-icon {
+  width: 12px;
+  height: 12px;
+  opacity: 0.9;
 }
 
 .role-badge.role-controller {
@@ -141,6 +158,10 @@ h3 {
   background-color: rgba(142, 156, 174, 0.2);
   color: var(--text-muted);
   border: 1px solid var(--text-muted);
+}
+
+.role-badge.is-unlocked {
+  border-style: dashed;
 }
 
 .connection-indicator {
@@ -376,8 +397,63 @@ h3 {
   padding: 1rem;
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   gap: 1rem;
+}
+
+.zone-main,
+.group-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.zone-title,
+.group-title {
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.zone-meta,
+.group-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 0.75rem;
+}
+
+.field-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.field-stack label {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.checkbox-stack {
+  justify-content: flex-end;
+}
+
+.checkbox-stack label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-main);
+}
+
+.checkbox-stack input {
+  width: auto;
+}
+
+.group-members {
+  min-height: 84px;
+  resize: vertical;
 }
 
 .zone-item input,
@@ -400,6 +476,12 @@ h3 {
 .group-controls {
   display: flex;
   gap: 0.5rem;
+}
+
+.zone-controls .btn,
+.group-controls .btn {
+  padding: 0.65rem 1rem;
+  font-size: 0.8rem;
 }
 
 .zone-controls button,
@@ -721,14 +803,16 @@ input:checked + .slider::before {
 
 .settings-content {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 1.5rem;
+  align-items: start;
 }
 
 .settings-section {
   border: 1px solid var(--border-color);
   border-radius: 12px;
   padding: 1.5rem;
+  min-width: 0;
 }
 
 .settings-section h3 {
@@ -772,10 +856,116 @@ input:checked + .slider::before {
   margin-right: 0.5rem;
 }
 
+.wifi-status-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem;
+  background-color: rgba(76, 175, 80, 0.08);
+  border: 1px solid rgba(76, 175, 80, 0.3);
+  border-radius: 6px;
+}
+
+.wifi-ssid-label {
+  flex: 1;
+  font-weight: 600;
+  color: var(--status-safe);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wifi-status-row .btn {
+  flex-shrink: 0;
+}
+
+.wifi-sub {
+  margin-bottom: 0.25rem;
+}
+
+.wifi-sub h4 {
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 0.75rem;
+}
+
+.wifi-sub-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.wifi-sub-header h4 {
+  margin-bottom: 0;
+}
+
+.ap-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+  letter-spacing: 0.08em;
+}
+
+.ap-badge-active {
+  background-color: rgba(76, 175, 80, 0.15);
+  color: var(--status-safe);
+  border: 1px solid rgba(76, 175, 80, 0.4);
+}
+
+.ap-badge-disabled {
+  background-color: rgba(244, 67, 54, 0.15);
+  color: var(--status-armed);
+  border: 1px solid rgba(244, 67, 54, 0.4);
+}
+
+.wifi-divider {
+  border: none;
+  border-top: 1px solid var(--border-color);
+  margin: 1.25rem 0;
+}
+
+.wifi-action-row {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 0.25rem;
+}
+
+.wifi-connect-status {
+  margin-top: 0.75rem;
+  padding: 0.6rem 0.85rem;
+  background-color: rgba(0, 180, 216, 0.08);
+  border: 1px solid rgba(0, 180, 216, 0.25);
+  border-radius: 6px;
+  font-size: 0.9rem;
+  color: var(--accent-secondary);
+}
+
+#wifiConnectDiv {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: end;
+}
+
+#wifiConnectDiv .btn {
+  white-space: nowrap;
+}
+
+#wifiNetworks {
+  width: 100%;
+}
+
 .import-div {
   display: flex;
   gap: 1rem;
   align-items: flex-end;
+  flex-wrap: wrap;
 }
 
 .import-div input[type="file"] {
@@ -924,6 +1114,14 @@ progress::-moz-progress-bar {
   .modal-card {
     padding: 1.5rem;
   }
+
+  .settings-content {
+    grid-template-columns: 1fr;
+  }
+
+  #wifiConnectDiv {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 480px) {
@@ -950,6 +1148,26 @@ progress::-moz-progress-bar {
     grid-template-columns: 1fr;
   }
 
+  .zone-meta,
+  .group-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .zone-item,
+  .group-item {
+    flex-direction: column;
+  }
+
+  .zone-controls,
+  .group-controls {
+    width: 100%;
+  }
+
+  .zone-controls .btn,
+  .group-controls .btn {
+    width: 100%;
+  }
+
   .nav-tabs {
     justify-content: space-around;
   }
@@ -957,5 +1175,9 @@ progress::-moz-progress-bar {
   .nav-tab {
     padding: 0.3rem 0.5rem;
     font-size: 0.7rem;
+  }
+
+  .settings-section {
+    padding: 1rem;
   }
 }

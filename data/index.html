@@ -25,7 +25,11 @@
         </nav>
         <div class="nav-right">
             <div class="status-group">
-                <span class="role-badge" id="roleBadge">—</span>
+                <button class="role-badge role-viewer is-locked" id="roleBadge" type="button"
+                    aria-label="Controller role lock" title="Controller role lock">
+                    <img id="roleLockIcon" class="role-lock-icon" src="lock.svg" alt="Locked" />
+                    <span id="roleBadgeText">—</span>
+                </button>
                 <div class="connection-indicator" id="connectionDot"></div>
             </div>
             <button class="btn-estop" id="eStopBtn" title="Emergency Stop">E-STOP</button>
@@ -164,22 +168,44 @@
 
                 <!-- WiFi Section -->
                 <div class="settings-section card">
-                    <h3>WiFi Configuration</h3>
-                    <div class="setting-group">
-                        <label>HOSTED AP SSID:</label>
-                        <input type="text" id="apSsid" placeholder="ApexPyro">
-                        <label>HOSTED AP Password:</label>
-                        <input type="password" id="apPassword" placeholder="apexFIRE!pyro">
-                        <button id="saveApBtn" class="btn btn-secondary">Save AP Credentials</button>
+                    <h3>WiFi</h3>
+
+                    <!-- Hosted AP sub-section -->
+                    <div class="wifi-sub">
+                        <div class="wifi-sub-header">
+                            <h4>Hosted Access Point</h4>
+                            <span id="apStatusBadge" class="ap-badge ap-badge-active">ACTIVE</span>
+                        </div>
+                        <div class="setting-group">
+                            <label>AP SSID:</label>
+                            <input type="text" id="apSsid" placeholder="ApexPyro">
+                            <label>AP Password:</label>
+                            <input type="password" id="apPassword" placeholder="apexFIRE!pyro">
+                            <button id="saveApBtn" class="btn btn-secondary">Save AP Settings</button>
+                        </div>
                     </div>
-                    <div class="setting-group">
-                        <button id="scanWifiBtn" class="btn btn-secondary">Scan for Networks</button>
-                        <select id="wifiNetworks" style="display: none;">
-                            <option>Select a network...</option>
-                        </select>
-                        <div id="wifiConnectDiv" style="display: none;">
-                            <input type="password" id="wifiPassword" placeholder="Password">
+
+                    <hr class="wifi-divider">
+
+                    <!-- External network sub-section -->
+                    <div class="wifi-sub">
+                        <h4>External Network (Client Mode)</h4>
+                        <p class="muted" style="margin-bottom: 0.75rem;">Connect to a local access point. The hosted AP
+                            will be disabled while connected.</p>
+                        <div class="setting-group">
+                            <label>Network SSID:</label>
+                            <input type="text" id="extSsid" placeholder="Your network name" autocomplete="off">
+                            <label>Password:</label>
+                            <input type="password" id="extPassword" placeholder="Network password"
+                                autocomplete="new-password">
+                        </div>
+                        <div class="wifi-action-row">
                             <button id="connectWifiBtn" class="btn btn-secondary">Connect</button>
+                            <button id="forgetWifiBtn" class="btn btn-danger" style="display: none;">Forget
+                                Network</button>
+                        </div>
+                        <div id="wifiConnectStatus" class="wifi-connect-status" style="display: none;">
+                            <span id="wifiConnectStatusText">Connecting...</span>
                         </div>
                     </div>
                 </div>
@@ -293,51 +319,124 @@
     <!-- Embedded CSS (will be in style.css file) -->
     <!-- Embedded JavaScript -->
     <script>
-        // CRC32 lookup table
-        const CRC32_TABLE = new Uint32Array([
-            0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f, 0xe963a535, 0x9e6495a3,
-            0x0edb8832, 0x79dcb8a4, 0xe0d5e91e, 0x97d2d988, 0x09b64c2b, 0x7eb17cbd, 0xe7b82d07, 0x90bf1d91,
-            0x1db71642, 0x6ab020f2, 0xf3b97148, 0x84be41de, 0x1adad47d, 0x6ddde4eb, 0xf4d4b551, 0x83d385c7,
-            0x136c9856, 0x646ba8c0, 0xfd62f97a, 0x8a65c9ec, 0x14015c4f, 0x63066cd9, 0xfa44e5d6, 0x8d079fd5,
-            // ... truncated for space - full table would be here
-        ]);
+        const MAX_ZONES = 48;
+        const MAX_GROUPS = 16;
+        const PAGE_PATHS = {
+            splash: '/',
+            builder: '/builder',
+            show: '/show',
+            settings: '/settings'
+        };
+        const CONTINUITY_CLASSES = ['unknown', 'good', 'open', 'shorted', 'firing'];
+        const CONTINUITY_LABELS = ['Unknown', 'Good', 'Open', 'Shorted', 'Firing'];
+        const DEFAULT_AUX_NAMES = ['Lights', 'Music'];
+        const DEFAULT_SETTINGS = {
+            igniterDurationMs: 2000,
+            igniterDurationSec: 2,
+            autoDelay: 0,
+            abortOnDisconnect: false,
+            eStopResetMode: 0,
+            continuityLoGood: 0.0001,
+            continuityHiGood: 0.015,
+            continuityLoOpen: 3.0
+        };
 
-        function crc32(str) {
-            let crc = 0xffffffff;
-            for (let i = 0; i < str.length; i++) {
-                const byte = str.charCodeAt(i) & 0xff;
-                crc = (crc >>> 8) ^ CRC32_TABLE[(crc ^ byte) & 0xff];
-            }
-            return (crc ^ 0xffffffff) >>> 0;
+        const appState = {
+            page: 'splash',
+            role: 'viewer',
+            roleLocked: true,
+            masterArmed: false,
+            boardCount: 0,
+            batteryPercent: null,
+            wifiLevel: 'NONE',
+            wifiConfig: {
+                apSsid: 'ApexPyro',
+                apPassword: 'apexFIRE!pyro',
+                clientSsid: '',
+                connected: false,
+                clientPassword: '',
+                currentSsid: 'ApexPyro',
+                apActive: true,
+                connecting: false
+            },
+            settings: { ...DEFAULT_SETTINGS },
+            auxNames: [...DEFAULT_AUX_NAMES],
+            groups: [],
+            zones: Array.from({ length: MAX_ZONES }, (_, index) => defaultZone(index)),
+            relayTestRunning: false
+        };
+
+        let ws = null;
+        let wsReconnectAttempts = 0;
+        const MAX_RECONNECT_ATTEMPTS = 10;
+        let wifiConnectStartAt = 0;
+        const WIFI_CONNECT_STALE_MS = 25000;
+        const CLIENT_KEY_STORAGE_KEY = 'apx_client_key';
+
+        function defaultZone(index) {
+            return {
+                id: index,
+                description: '',
+                time: 0,
+                enabled: true,
+                group: 0,
+                order: index,
+                continuity: 0
+            };
+        }
+
+        function normalizePageId(pathname) {
+            const normalized = pathname === '/' ? '/' : pathname.replace(/\/+$/, '');
+            const match = Object.entries(PAGE_PATHS).find(([, path]) => path === normalized);
+            return match ? match[0] : 'splash';
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
         }
 
         function calcChecksum(cmd, zone, timestamp) {
             const data = `${cmd}:${zone}:${timestamp}`;
-            return crc32(data).toString(16).padStart(8, '0');
-        }
+            let crc = 0xffffffff;
 
-        // WebSocket Connection
-        let ws = null;
-        let wsReconnectAttempts = 0;
-        const MAX_RECONNECT_ATTEMPTS = 10;
+            for (let i = 0; i < data.length; i++) {
+                const byte = data.charCodeAt(i) & 0xff;
+                for (let bitIndex = 0; bitIndex < 8; bitIndex++) {
+                    const bit = (byte >> (7 - bitIndex)) & 1;
+                    const topBit = (crc >>> 31) & 1;
+                    crc = (crc << 1) >>> 0;
+                    if ((topBit ^ bit) !== 0) {
+                        crc = (crc ^ 0x04c11db7) >>> 0;
+                    }
+                }
+            }
+
+            return crc.toString(16).padStart(8, '0');
+        }
 
         function connectWebSocket() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const host = window.location.hostname || 'apexpyro.local';
+            const host = window.location.host || 'apexpyro.local';
             ws = new WebSocket(`${protocol}//${host}/ws`);
 
             ws.onopen = () => {
-                console.log('WebSocket connected');
                 wsReconnectAttempts = 0;
                 document.getElementById('connectionDot').classList.add('connected');
+                wsSend({ type: 'client_hello', clientKey: getOrCreateClientKey() });
+                wsSend({ type: 'get_state' });
+                wsSend({ type: 'get_role' });
             };
 
             ws.onmessage = (event) => {
                 try {
-                    const msg = JSON.parse(event.data);
-                    handleMessage(msg);
-                } catch (e) {
-                    console.error('Failed to parse message:', e);
+                    handleMessage(JSON.parse(event.data));
+                } catch (error) {
+                    console.error('Failed to parse message:', error);
                 }
             };
 
@@ -346,36 +445,39 @@
             };
 
             ws.onclose = () => {
-                console.log('WebSocket disconnected');
                 document.getElementById('connectionDot').classList.remove('connected');
                 attemptReconnect();
             };
         }
 
         function attemptReconnect() {
-            if (wsReconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-                wsReconnectAttempts++;
-                const delay = Math.pow(2, wsReconnectAttempts) * 1000;
-                console.log(`Attempting reconnect in ${delay}ms...`);
-                setTimeout(connectWebSocket, delay);
+            if (wsReconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+                return;
             }
+
+            wsReconnectAttempts += 1;
+            const delay = Math.min(Math.pow(2, wsReconnectAttempts) * 1000, 15000);
+            setTimeout(connectWebSocket, delay);
         }
 
         function wsSend(obj) {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                // Auto-add checksum for commands that need it
-                if (obj.type === 'fire' || obj.type === 'arm' || obj.type === 'auto_start') {
-                    const ts = Math.floor(Date.now() / 1000);
-                    obj.ts = ts;
-                    obj.cs = calcChecksum(obj.type.toUpperCase(), obj.zone || (obj.state ? 1 : 0), ts);
-                }
-                ws.send(JSON.stringify(obj));
-            } else {
-                console.warn('WebSocket not ready');
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                showToast('WebSocket not ready', 'error');
+                return false;
             }
+
+            const payload = { ...obj };
+            if (payload.type === 'fire' || payload.type === 'arm' || payload.type === 'auto_start') {
+                const ts = Math.floor(Date.now() / 1000);
+                const checksumValue = payload.zone ?? (payload.state ? 1 : 0);
+                payload.ts = ts;
+                payload.cs = calcChecksum(payload.type.toUpperCase(), checksumValue, ts);
+            }
+
+            ws.send(JSON.stringify(payload));
+            return true;
         }
 
-        // Message Handlers
         function handleMessage(msg) {
             switch (msg.type) {
                 case 'full_state':
@@ -396,127 +498,618 @@
                 case 'system_status':
                     updateSystemStatus(msg);
                     break;
+                case 'zone_fired':
+                    handleZoneFired(msg);
+                    break;
+                case 'show_progress':
+                    updateRelayTestProgress(msg);
+                    break;
+                case 'estop_active':
+                    handleEStopActive();
+                    break;
                 case 'ping':
                     wsSend({ type: 'pong' });
                     break;
                 case 'error':
                     showToast(`Error: ${msg.msg}`, 'error');
                     break;
-                case 'wifi_scan_result':
-                    updateWiFiScanResults(msg);
-                    break;
+                default:
+                    console.log('Unhandled message', msg);
             }
         }
 
         function updateFullState(msg) {
-            document.getElementById('armStatus').textContent = msg.masterArmed ? 'ARMED' : 'DISARMED';
-            document.getElementById('masterArmToggle').checked = msg.masterArmed;
+            const wasConnecting = Boolean(appState.wifiConfig.connecting);
+
+            appState.masterArmed = Boolean(msg.masterArmed);
+            appState.boardCount = msg.boardCount ?? msg.detectedBoards ?? 0;
+            appState.wifiConfig = {
+                ...appState.wifiConfig,
+                ...(msg.wifiConfig || {})
+            };
+
+            if (typeof msg.role === 'string' && msg.role.length > 0) {
+                appState.role = msg.role;
+            }
+            if (typeof msg.roleLocked === 'boolean') {
+                appState.roleLocked = msg.roleLocked;
+            }
+
+            if (!wasConnecting && appState.wifiConfig.connecting) {
+                wifiConnectStartAt = Date.now();
+            } else if (!appState.wifiConfig.connecting) {
+                wifiConnectStartAt = 0;
+            }
+
+            appState.settings = {
+                ...appState.settings,
+                ...(msg.settings || {})
+            };
+            appState.auxNames = Array.isArray(msg.auxNames) && msg.auxNames.length >= 2
+                ? msg.auxNames
+                : [...appState.auxNames];
+            appState.groups = Array.isArray(msg.groups)
+                ? msg.groups.map((group) => ({
+                    id: Number(group.id ?? 0),
+                    name: group.name ?? '',
+                    members: group.members ?? '',
+                    order: Number(group.order ?? 0)
+                })).sort((left, right) => left.order - right.order || left.id - right.id)
+                : [];
+            appState.zones = Array.isArray(msg.zones)
+                ? msg.zones.map((zone, index) => ({
+                    ...defaultZone(index),
+                    id: Number(zone.id ?? index),
+                    description: zone.description ?? '',
+                    time: Number(zone.time ?? 0),
+                    enabled: zone.enabled !== false,
+                    group: Number(zone.group ?? 0),
+                    order: Number(zone.order ?? index),
+                    continuity: Number(zone.continuity ?? 0)
+                }))
+                : appState.zones;
+
+            renderApp();
         }
 
         function updateContinuity(msg) {
-            // Update zone continuity indicators
-            if (msg.zones) {
-                const statuses = ['unknown', 'good', 'open', 'shorted', 'firing'];
-                // This would be rendered in the zones grid
+            if (!Array.isArray(msg.zones)) {
+                return;
             }
+
+            appState.zones = appState.zones.map((zone, index) => ({
+                ...zone,
+                continuity: Number(msg.zones[index] ?? zone.continuity ?? 0)
+            }));
+            renderShowZones();
         }
 
         function updateBattery(msg) {
-            document.getElementById('batteryPercent').textContent = msg.percent + '%';
-            document.getElementById('showBatteryPercent').textContent = msg.percent + '%';
+            appState.batteryPercent = Number(msg.percent ?? 0);
+            document.getElementById('batteryPercent').textContent = `${appState.batteryPercent}%`;
+            document.getElementById('showBatteryPercent').textContent = `${appState.batteryPercent}%`;
         }
 
         function updateWiFi(msg) {
-            const levels = ['none', 'low', 'medium', 'high'];
-            const level = levels[msg.level] || 'unknown';
-            document.getElementById('wifiLevel').textContent = level.toUpperCase();
-            document.getElementById('showWiFiLevel').textContent = level.toUpperCase();
+            const levels = ['NONE', 'LOW', 'MEDIUM', 'HIGH'];
+            appState.wifiLevel = levels[msg.level] || 'UNKNOWN';
+            document.getElementById('wifiLevel').textContent = appState.wifiLevel;
+            document.getElementById('showWiFiLevel').textContent = appState.wifiLevel;
         }
 
         function updateRole(msg) {
-            document.getElementById('roleBadge').textContent = msg.role.toUpperCase();
-            document.getElementById('roleBadge').className = `role-badge role-${msg.role}`;
+            if (typeof msg.role === 'string' && msg.role.length > 0) {
+                appState.role = msg.role;
+            }
+            if (typeof msg.roleLocked === 'boolean') {
+                appState.roleLocked = msg.roleLocked;
+            }
+            renderRoleBadge();
+            renderShowZones();
+        }
+
+        function renderRoleBadge() {
+            const badge = document.getElementById('roleBadge');
+            const badgeText = document.getElementById('roleBadgeText');
+            const lockIcon = document.getElementById('roleLockIcon');
+            const role = appState.role || 'viewer';
+            const locked = appState.roleLocked !== false;
+
+            badgeText.textContent = role.toUpperCase();
+            badge.className = `role-badge role-${role} ${locked ? 'is-locked' : 'is-unlocked'}`;
+            badge.disabled = role !== 'controller';
+            badge.setAttribute('aria-pressed', locked ? 'true' : 'false');
+
+            lockIcon.src = locked ? 'lock.svg' : 'lock-open.svg';
+            lockIcon.alt = locked ? 'Locked' : 'Unlocked';
+
+            if (role === 'controller') {
+                badge.title = locked ? 'Controller is locked. Click to unlock role handoff.' : 'Controller is unlocked. Click to lock role handoff.';
+            } else {
+                badge.title = locked ? 'Controller role is locked by the active controller.' : 'Controller role is unlocked by the active controller.';
+            }
+        }
+
+        function getOrCreateClientKey() {
+            let key = localStorage.getItem(CLIENT_KEY_STORAGE_KEY);
+            if (key && key.length > 0) {
+                return key;
+            }
+
+            if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+                key = window.crypto.randomUUID();
+            } else {
+                key = `apx-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
+            }
+
+            localStorage.setItem(CLIENT_KEY_STORAGE_KEY, key);
+            return key;
+        }
+
+        function toggleRoleLock() {
+            if (appState.role !== 'controller') {
+                showToast('Only the active controller can change role lock', 'error');
+                return;
+            }
+
+            wsSend({ type: 'set_role_lock', locked: !(appState.roleLocked !== false) });
         }
 
         function updateSystemStatus(msg) {
-            // Update system status displays
-        }
-
-        function updateWiFiScanResults(msg) {
-            const select = document.getElementById('wifiNetworks');
-            select.innerHTML = '<option>Select a network...</option>';
-            if (msg.networks) {
-                msg.networks.forEach(ssid => {
-                    const option = document.createElement('option');
-                    option.value = ssid;
-                    option.textContent = ssid;
-                    select.appendChild(option);
-                });
+            if (typeof msg.masterArmed === 'boolean') {
+                appState.masterArmed = msg.masterArmed;
             }
-            select.style.display = 'block';
+            renderArmStatus();
+            renderShowZones();
         }
 
-        // Page Navigation
-        document.querySelectorAll('.nav-tab').forEach(tab => {
-            tab.addEventListener('click', () => {
-                const pageId = tab.dataset.page;
-                showPage(pageId);
-            });
-        });
+        function handleZoneFired(msg) {
+            const zoneId = Number(msg.zone ?? -1);
+            if (zoneId < 0) {
+                return;
+            }
 
-        function showPage(pageId) {
-            document.querySelectorAll('.page').forEach(page => page.classList.remove('active'));
-            document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
-
-            document.getElementById(pageId).classList.add('active');
-            event.target.classList.add('active');
+            appState.zones = appState.zones.map((zone) => ({
+                ...zone,
+                continuity: zone.id === zoneId ? 4 : zone.continuity
+            }));
+            renderShowZones();
         }
 
-        // Tagline Rotator
-        const taglines = [
-            "The Collective Ignition",
-            "Share the Spark",
-            "Light It Up",
-            "The Peak of Pyrotechnics",
-            "Unleash the Heat",
-            "Masterful Displays. Unforgettable Moments",
-            "Engineering the Wow",
-            "Above the Rest",
-            "Beyond Bright",
-            "Sky High",
-            "Own the Night",
-            "Building Better Skies, Together",
-            "Unlimited Creativity. Open Design",
-            "Collaborate. Ignite. Inspire.",
-            "Crowdsourcing the Night"
-        ];
+        function updateRelayTestProgress(msg) {
+            const current = Number(msg.step ?? 0);
+            const total = Number(msg.total ?? 0);
+            const zone = Number(msg.zone ?? 0);
 
-        let taglineIndex = 0;
-        const taglineEl = document.getElementById('tagline');
-        setInterval(() => {
-            taglineIndex = (taglineIndex + 1) % taglines.length;
-            taglineEl.textContent = taglines[taglineIndex];
-        }, 4000);
+            if (total === 0) {
+                appState.relayTestRunning = false;
+                document.getElementById('testModal').style.display = 'none';
+                document.getElementById('testProgressBar').value = 0;
+                document.getElementById('testProgress').textContent = 'Relay test complete';
+                return;
+            }
 
-        // Master Arm Toggle
-        document.getElementById('masterArmToggle').addEventListener('change', (e) => {
-            const shouldArm = e.target.checked;
-            showConfirm(
-                shouldArm ? 'Arm System' : 'Disarm System',
-                shouldArm ? 'Arming will enable the igniter power relay. Continue?' : 'Disarming will disable firing.',
-                () => {
-                    wsSend({ type: 'arm', state: shouldArm });
-                },
-                () => {
-                    e.target.checked = !shouldArm;
+            appState.relayTestRunning = true;
+            const progress = total > 0 ? Math.round((current / total) * 100) : 0;
+
+            document.getElementById('testModal').style.display = 'flex';
+            document.getElementById('testProgress').textContent = `Zone ${zone + 1} of ${total}`;
+            document.getElementById('testProgressBar').value = progress;
+        }
+
+        function handleEStopActive() {
+            appState.masterArmed = false;
+            appState.relayTestRunning = false;
+            document.getElementById('testModal').style.display = 'none';
+            renderArmStatus();
+            renderShowZones();
+            showToast('Emergency stop activated', 'error');
+        }
+
+        function renderApp() {
+            hydrateSettingsForm();
+            renderRoleBadge();
+            renderArmStatus();
+            renderBuilderZones();
+            renderGroups();
+            renderShowZones();
+            syncShowMode();
+            document.getElementById('showBoardCount').textContent = `${appState.boardCount}`;
+            document.getElementById('detectedBoards').textContent = `${appState.boardCount}`;
+        }
+
+        function hydrateSettingsForm() {
+            document.getElementById('apSsid').value = appState.wifiConfig.apSsid || 'ApexPyro';
+            document.getElementById('apPassword').value = appState.wifiConfig.apPassword || 'apexFIRE!pyro';
+
+            // External network inputs
+            document.getElementById('extSsid').value = appState.wifiConfig.clientSsid || '';
+            document.getElementById('extPassword').value = appState.wifiConfig.clientPassword || '';
+
+            // Forget button: visible only when a network is saved
+            const hasSaved = (appState.wifiConfig.clientSsid || '').length > 0;
+            document.getElementById('forgetWifiBtn').style.display = hasSaved ? 'inline-flex' : 'none';
+
+            // AP status badge
+            const apActive = appState.wifiConfig.apActive !== false;
+            const badge = document.getElementById('apStatusBadge');
+            badge.textContent = apActive ? 'ACTIVE' : 'DISABLED';
+            badge.className = `ap-badge ${apActive ? 'ap-badge-active' : 'ap-badge-disabled'}`;
+
+            // Connecting status
+            const statusDiv = document.getElementById('wifiConnectStatus');
+            if (appState.wifiConfig.connecting) {
+                if (!wifiConnectStartAt) {
+                    wifiConnectStartAt = Date.now();
                 }
-            );
-        });
 
-        // E-Stop Button
-        document.getElementById('eStopBtn').addEventListener('click', () => {
-            wsSend({ type: 'estop' });
-        });
+                const elapsedMs = Date.now() - wifiConnectStartAt;
+                statusDiv.style.display = 'block';
+
+                if (elapsedMs > WIFI_CONNECT_STALE_MS) {
+                    document.getElementById('wifiConnectStatusText').textContent = 'Connection is taking longer than expected. You can retry.';
+                    document.getElementById('connectWifiBtn').disabled = false;
+                } else {
+                    document.getElementById('wifiConnectStatusText').textContent = `Connecting to "${appState.wifiConfig.clientSsid || 'network'}"…`;
+                    document.getElementById('connectWifiBtn').disabled = true;
+                }
+            } else {
+                statusDiv.style.display = 'none';
+                document.getElementById('connectWifiBtn').disabled = false;
+                wifiConnectStartAt = 0;
+            }
+
+            document.getElementById('igniterDuration').value = Number(appState.settings.igniterDurationSec ?? 2).toFixed(1).replace(/\.0$/, '');
+            document.getElementById('autoDelay').value = appState.settings.autoDelay ?? 0;
+            document.getElementById('abortOnDisconnect').checked = Boolean(appState.settings.abortOnDisconnect);
+            document.getElementById('eStopResetMode').value = String(appState.settings.eStopResetMode ?? 0);
+            document.getElementById('contLoGood').value = appState.settings.continuityLoGood ?? DEFAULT_SETTINGS.continuityLoGood;
+            document.getElementById('contHiGood').value = appState.settings.continuityHiGood ?? DEFAULT_SETTINGS.continuityHiGood;
+            document.getElementById('contLoOpen').value = appState.settings.continuityLoOpen ?? DEFAULT_SETTINGS.continuityLoOpen;
+            document.getElementById('aux1Name').value = appState.auxNames[0] || DEFAULT_AUX_NAMES[0];
+            document.getElementById('aux2Name').value = appState.auxNames[1] || DEFAULT_AUX_NAMES[1];
+        }
+
+        function renderArmStatus() {
+            document.getElementById('armStatus').textContent = appState.masterArmed ? 'ARMED' : 'DISARMED';
+            document.getElementById('masterArmToggle').checked = appState.masterArmed;
+            document.querySelector('.master-control').classList.toggle('armed', appState.masterArmed);
+        }
+
+        function renderBuilderZones() {
+            const zonesList = document.getElementById('zonesList');
+            zonesList.innerHTML = appState.zones
+                .slice()
+                .sort((left, right) => left.id - right.id)
+                .map((zone) => `
+                    <div class="zone-item" data-zone-id="${zone.id}">
+                        <div class="zone-main">
+                            <div class="zone-title">Zone ${zone.id + 1}</div>
+                            <div class="field-stack">
+                                <label>Description</label>
+                                <input type="text" data-field="description" value="${escapeHtml(zone.description)}" placeholder="Cake finale, comet lift, etc.">
+                            </div>
+                            <div class="zone-meta">
+                                <div class="field-stack">
+                                    <label>Time (sec)</label>
+                                    <input type="number" min="0" step="0.1" data-field="time" value="${escapeHtml(zone.time)}">
+                                </div>
+                                <div class="field-stack">
+                                    <label>Group</label>
+                                    <input type="number" min="0" max="${MAX_GROUPS - 1}" data-field="group" value="${escapeHtml(zone.group)}">
+                                </div>
+                                <div class="field-stack">
+                                    <label>Order</label>
+                                    <input type="number" min="0" data-field="order" value="${escapeHtml(zone.order)}">
+                                </div>
+                                <div class="field-stack checkbox-stack">
+                                    <label><input type="checkbox" data-field="enabled" ${zone.enabled ? 'checked' : ''}> Enabled</label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="zone-controls">
+                            <button class="btn btn-secondary" data-action="save-zone">Save</button>
+                        </div>
+                    </div>
+                `)
+                .join('');
+        }
+
+        function renderGroups() {
+            const groupsList = document.getElementById('groupsList');
+            groupsList.innerHTML = appState.groups.length === 0
+                ? '<div class="group-item"><div class="group-main"><div class="group-title">No groups saved yet</div><p class="muted">Add a group to start organizing zones.</p></div></div>'
+                : appState.groups.map((group) => `
+                    <div class="group-item" data-group-id="${group.id}">
+                        <div class="group-main">
+                            <div class="group-title">Group ${group.id}</div>
+                            <div class="group-meta">
+                                <div class="field-stack">
+                                    <label>Name</label>
+                                    <input type="text" data-field="name" value="${escapeHtml(group.name)}">
+                                </div>
+                                <div class="field-stack">
+                                    <label>Order</label>
+                                    <input type="number" min="0" data-field="order" value="${escapeHtml(group.order)}">
+                                </div>
+                            </div>
+                            <div class="field-stack">
+                                <label>Members (comma separated zone numbers)</label>
+                                <textarea class="group-members" data-field="members" placeholder="1,2,3">${escapeHtml(group.members)}</textarea>
+                            </div>
+                        </div>
+                        <div class="group-controls">
+                            <button class="btn btn-secondary" data-action="save-group">Save</button>
+                        </div>
+                    </div>
+                `).join('');
+        }
+
+        function renderShowZones() {
+            const showZoneGrid = document.getElementById('showZoneGrid');
+            showZoneGrid.innerHTML = appState.zones
+                .slice()
+                .sort((left, right) => left.order - right.order || left.id - right.id)
+                .map((zone) => {
+                    const continuityClass = CONTINUITY_CLASSES[zone.continuity] || 'unknown';
+                    const continuityLabel = CONTINUITY_LABELS[zone.continuity] || 'Unknown';
+                    const canFire = appState.role === 'controller' && appState.masterArmed && zone.enabled;
+                    const buttonLabel = !zone.enabled
+                        ? 'Disabled'
+                        : appState.masterArmed
+                            ? 'Fire'
+                            : 'Arm Required';
+                    return `
+                        <div class="zone-card" data-show-zone-id="${zone.id}">
+                            <div class="zone-card-header">
+                                <div>
+                                    <div class="zone-number">Zone ${zone.id + 1}</div>
+                                    <div class="zone-desc">${escapeHtml(zone.description || 'No description')}</div>
+                                </div>
+                                <div class="continuity-dot ${continuityClass}" title="${continuityLabel}"></div>
+                            </div>
+                            <div class="muted">Order ${zone.order} · Group ${zone.group}</div>
+                            <button class="zone-fire-button ${canFire ? 'fire' : ''}" data-action="fire-zone" data-zone-id="${zone.id}" ${canFire ? '' : 'disabled'}>${buttonLabel}</button>
+                        </div>
+                    `;
+                })
+                .join('');
+        }
+
+        function syncShowMode() {
+            const autoPanel = document.getElementById('autoShowPanel');
+            const selectedMode = document.querySelector('input[name="showMode"]:checked')?.value || 'manual';
+            autoPanel.style.display = selectedMode === 'auto' ? 'block' : 'none';
+        }
+
+        function showPage(pageId, options = {}) {
+            const { pushHistory = true } = options;
+            appState.page = PAGE_PATHS[pageId] ? pageId : 'splash';
+
+            document.querySelectorAll('.page').forEach((page) => page.classList.remove('active'));
+            document.querySelectorAll('.nav-tab').forEach((tab) => tab.classList.remove('active'));
+
+            document.getElementById(appState.page).classList.add('active');
+            document.querySelector(`.nav-tab[data-page="${appState.page}"]`)?.classList.add('active');
+
+            if (pushHistory) {
+                const targetPath = PAGE_PATHS[appState.page] || '/';
+                if (window.location.pathname !== targetPath) {
+                    window.history.pushState({ page: appState.page }, '', targetPath);
+                }
+            }
+        }
+
+        function saveZone(item) {
+            const zoneId = Number(item.dataset.zoneId);
+            wsSend({
+                type: 'set_zone',
+                zone: zoneId,
+                desc: item.querySelector('[data-field="description"]').value.trim(),
+                time: Number(item.querySelector('[data-field="time"]').value || 0),
+                enabled: item.querySelector('[data-field="enabled"]').checked,
+                group: Number(item.querySelector('[data-field="group"]').value || 0),
+                order: Number(item.querySelector('[data-field="order"]').value || zoneId)
+            });
+        }
+
+        function saveGroup(item) {
+            const groupId = Number(item.dataset.groupId);
+            wsSend({
+                type: 'set_group',
+                id: groupId,
+                name: item.querySelector('[data-field="name"]').value.trim(),
+                members: item.querySelector('[data-field="members"]').value.trim(),
+                order: Number(item.querySelector('[data-field="order"]').value || groupId)
+            });
+        }
+
+        function addGroup() {
+            if (appState.groups.length >= MAX_GROUPS) {
+                showToast('Maximum group count reached', 'error');
+                return;
+            }
+
+            const usedIds = new Set(appState.groups.map((group) => group.id));
+            let nextId = 0;
+            while (usedIds.has(nextId) && nextId < MAX_GROUPS) {
+                nextId += 1;
+            }
+
+            if (nextId >= MAX_GROUPS) {
+                showToast('Maximum group count reached', 'error');
+                return;
+            }
+
+            const newGroup = {
+                id: nextId,
+                name: `Group ${nextId}`,
+                members: '',
+                order: nextId
+            };
+
+            appState.groups = [...appState.groups, newGroup].sort((left, right) => left.order - right.order || left.id - right.id);
+            renderGroups();
+            wsSend({ type: 'set_group', ...newGroup });
+        }
+
+        function saveApCredentials() {
+            wsSend({
+                type: 'set_ap_credentials',
+                ssid: document.getElementById('apSsid').value.trim(),
+                pass: document.getElementById('apPassword').value.trim()
+            });
+        }
+
+        function forgetNetwork() {
+            showConfirm(
+                'Forget Network',
+                `Remove credentials for "${appState.wifiConfig.clientSsid || 'saved network'}" and re-enable the hosted access point?`,
+                () => wsSend({ type: 'wifi_forget' }),
+                null
+            );
+        }
+
+        function connectToExternalNetwork() {
+            const ssid = document.getElementById('extSsid').value.trim();
+            const pass = document.getElementById('extPassword').value;
+            if (!ssid) {
+                showToast('Enter a network SSID first', 'error');
+                return;
+            }
+            wifiConnectStartAt = Date.now();
+            document.getElementById('wifiConnectStatusText').textContent = `Connecting to "${ssid}"…`;
+            document.getElementById('wifiConnectStatus').style.display = 'block';
+            document.getElementById('connectWifiBtn').disabled = true;
+            wsSend({ type: 'wifi_connect', ssid, pass });
+        }
+
+        function saveIgniterSettings() {
+            const seconds = Number(document.getElementById('igniterDuration').value || 0);
+            const autoDelay = Number(document.getElementById('autoDelay').value || 0);
+            wsSend({ type: 'set_setting', key: 'ign_dur', value: Math.round(seconds * 1000) });
+            wsSend({ type: 'set_setting', key: 'auto_delay', value: autoDelay });
+        }
+
+        function saveSafetySettings() {
+            wsSend({
+                type: 'set_setting',
+                key: 'abort_disc',
+                value: document.getElementById('abortOnDisconnect').checked ? 1 : 0
+            });
+            wsSend({
+                type: 'set_setting',
+                key: 'estop_mode',
+                value: Number(document.getElementById('eStopResetMode').value || 0)
+            });
+        }
+
+        function saveContinuityThresholds() {
+            wsSend({ type: 'set_setting', key: 'cont_lo_good', value: Number(document.getElementById('contLoGood').value || 0) });
+            wsSend({ type: 'set_setting', key: 'cont_hi_good', value: Number(document.getElementById('contHiGood').value || 0) });
+            wsSend({ type: 'set_setting', key: 'cont_lo_open', value: Number(document.getElementById('contLoOpen').value || 0) });
+        }
+
+        function saveAuxName(relay) {
+            const elementId = relay === 0 ? 'aux1Name' : 'aux2Name';
+            wsSend({
+                type: 'set_aux_name',
+                relay,
+                name: document.getElementById(elementId).value.trim()
+            });
+        }
+
+        function startRelayTest() {
+            if (wsSend({ type: 'relay_test' })) {
+                appState.relayTestRunning = true;
+                document.getElementById('testModal').style.display = 'flex';
+                document.getElementById('testProgress').textContent = 'Starting relay test...';
+                document.getElementById('testProgressBar').value = 0;
+            }
+        }
+
+        function bindStaticEvents() {
+            document.querySelectorAll('.nav-tab').forEach((tab) => {
+                tab.addEventListener('click', () => {
+                    showPage(tab.dataset.page);
+                });
+            });
+
+            window.addEventListener('popstate', () => {
+                showPage(normalizePageId(window.location.pathname), { pushHistory: false });
+            });
+
+            document.getElementById('masterArmToggle').addEventListener('change', (event) => {
+                const shouldArm = event.target.checked;
+                showConfirm(
+                    shouldArm ? 'Arm System' : 'Disarm System',
+                    shouldArm ? 'Arming will enable the igniter power relay. Continue?' : 'Disarming will disable firing.',
+                    () => wsSend({ type: 'arm', state: shouldArm }),
+                    () => {
+                        event.target.checked = !shouldArm;
+                    }
+                );
+            });
+
+            document.getElementById('eStopBtn').addEventListener('click', () => {
+                wsSend({ type: 'estop' });
+            });
+            document.getElementById('roleBadge').addEventListener('click', toggleRoleLock);
+
+            document.getElementById('saveApBtn').addEventListener('click', saveApCredentials);
+            document.getElementById('connectWifiBtn').addEventListener('click', connectToExternalNetwork);
+            document.getElementById('forgetWifiBtn').addEventListener('click', forgetNetwork);
+            document.getElementById('igniterDuration').addEventListener('change', saveIgniterSettings);
+            document.getElementById('autoDelay').addEventListener('change', saveIgniterSettings);
+            document.getElementById('abortOnDisconnect').addEventListener('change', saveSafetySettings);
+            document.getElementById('eStopResetMode').addEventListener('change', saveSafetySettings);
+            document.getElementById('calibrateBtn').addEventListener('click', saveContinuityThresholds);
+            document.getElementById('aux1Name').addEventListener('change', () => saveAuxName(0));
+            document.getElementById('aux2Name').addEventListener('change', () => saveAuxName(1));
+            document.getElementById('relayTestBtn').addEventListener('click', startRelayTest);
+            document.getElementById('testStopBtn').addEventListener('click', () => {
+                wsSend({ type: 'estop' });
+            });
+            document.getElementById('addGroupBtn').addEventListener('click', addGroup);
+            document.getElementById('autoStartBtn').addEventListener('click', () => wsSend({ type: 'auto_start', zone: 0 }));
+            document.getElementById('autoStopBtn').addEventListener('click', () => wsSend({ type: 'auto_stop' }));
+            document.querySelectorAll('input[name="showMode"]').forEach((radio) => {
+                radio.addEventListener('change', syncShowMode);
+            });
+
+            document.getElementById('zonesList').addEventListener('click', (event) => {
+                const action = event.target.dataset.action;
+                if (action !== 'save-zone') {
+                    return;
+                }
+
+                const item = event.target.closest('[data-zone-id]');
+                if (item) {
+                    saveZone(item);
+                }
+            });
+
+            document.getElementById('groupsList').addEventListener('click', (event) => {
+                const action = event.target.dataset.action;
+                if (action !== 'save-group') {
+                    return;
+                }
+
+                const item = event.target.closest('[data-group-id]');
+                if (item) {
+                    saveGroup(item);
+                }
+            });
+
+            document.getElementById('showZoneGrid').addEventListener('click', (event) => {
+                const button = event.target.closest('[data-action="fire-zone"]');
+                if (!button) {
+                    return;
+                }
+
+                wsSend({ type: 'fire', zone: Number(button.dataset.zoneId) });
+            });
+        }
 
         // Confirmation Modal
         function showConfirm(title, body, onOk, onCancel) {
@@ -547,12 +1140,39 @@
 
         // Toast Notifications
         function showToast(message, type = 'info') {
-            // Simplified toast - could be enhanced with actual toast UI
             console.log(`[${type}] ${message}`);
         }
 
+        const taglines = [
+            'The Collective Ignition',
+            'Share the Spark',
+            'Light It Up',
+            'The Peak of Pyrotechnics',
+            'Unleash the Heat',
+            'Masterful Displays. Unforgettable Moments',
+            'Engineering the Wow',
+            'Above the Rest',
+            'Beyond Bright',
+            'Sky High',
+            'Own the Night',
+            'Building Better Skies, Together',
+            'Unlimited Creativity. Open Design',
+            'Collaborate. Ignite. Inspire.',
+            'Crowdsourcing the Night'
+        ];
+
+        let taglineIndex = 0;
+        const taglineEl = document.getElementById('tagline');
+        setInterval(() => {
+            taglineIndex = (taglineIndex + 1) % taglines.length;
+            taglineEl.textContent = taglines[taglineIndex];
+        }, 4000);
+
         // Initialize
         window.addEventListener('DOMContentLoaded', () => {
+            bindStaticEvents();
+            showPage(normalizePageId(window.location.pathname), { pushHistory: false });
+            renderApp();
             connectWebSocket();
         });
     </script>

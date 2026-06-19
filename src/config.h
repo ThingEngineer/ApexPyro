@@ -85,7 +85,10 @@ static const uint16_t SHOW_RUNNER_TICK_MS = 10;  // Update frequency
 // WiFi
 static const char* DEFAULT_AP_SSID = "ApexPyro";
 static const char* DEFAULT_AP_PASSWORD = "apexFIRE!pyro";
-static const uint16_t WIFI_CONNECT_TIMEOUT_MS = 10000;  // 10s timeout for client mode
+static const uint16_t WIFI_CONNECT_TIMEOUT_MS = 10000;  // 10s timeout for UI-initiated client mode
+static const uint16_t WIFI_BOOT_CONNECT_TIMEOUT_MS = 30000;  // 30s timeout for boot auto-reconnect
+static const uint8_t WIFI_CONNECT_MAX_RETRIES = 5;
+static const uint32_t WIFI_CONNECT_RETRY_BASE_MS = 2000;  // Exponential backoff base
 static const uint8_t WIFI_RSSI_LEVEL_NONE = 0;
 static const uint8_t WIFI_RSSI_LEVEL_LOW = -80;
 static const uint8_t WIFI_RSSI_LEVEL_MEDIUM = -60;

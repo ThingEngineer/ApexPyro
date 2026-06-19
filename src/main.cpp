@@ -188,6 +188,7 @@ void loop() {
   relayManager.update();
   wsHandler.update();
   showRunner.update();
+  wifiManager.update();
   
   delay(10);
 }

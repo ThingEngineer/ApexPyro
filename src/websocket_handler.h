@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
+#include <vector>
 #include "config.h"
 
 class WebSocketHandler {
@@ -14,7 +15,7 @@ public:
     void update();
     
     // Broadcasting state to connected clients
-    void broadcastFullState();
+    void broadcastFullState(uint32_t targetClientId = 0);
     void broadcastContinuity();
     void broadcastBatteryStatus();
     void broadcastWiFiStatus();
@@ -26,12 +27,20 @@ public:
     void broadcastSystemStatus();
     
 private:
+    struct ClientIdentity {
+        uint32_t clientId;
+        String key;
+    };
+
     AsyncWebServer server;
     AsyncWebSocket ws;
     
     uint32_t controllerClientId;  // 0 = no controller
+    bool controllerRoleLocked;
+    String controllerOwnerKey;
     uint32_t lastHeartbeatMs;
     std::vector<uint32_t> viewerClientIds;
+    std::vector<ClientIdentity> clientIdentities;
     
     // Heartbeat & timeout
     void handleHeartbeatTimeout();
@@ -50,10 +59,13 @@ private:
     void handleGroupConfigCommand(uint32_t clientId, const char* data);
     void handleSettingCommand(uint32_t clientId, const char* data);
     void handleAuxNameCommand(uint32_t clientId, const char* data);
-    void handleWiFiScanCommand(uint32_t clientId);
+    void handleApConfigCommand(uint32_t clientId, const char* data);
+    void handleForgetWiFiCommand(uint32_t clientId);
     void handleWiFiConnectCommand(uint32_t clientId, const char* data);
     void handleImportShowCommand(uint32_t clientId, const char* data);
     void handleRelayTestCommand(uint32_t clientId, const char* data);
+    void handleClientHello(uint32_t clientId, const char* data);
+    void handleRoleLockCommand(uint32_t clientId, const char* data);
     
     // WebSocket callbacks
     static void onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* client, 
@@ -62,10 +74,28 @@ private:
     // Client management
     void promoteViewerToController();
     void removeClient(uint32_t clientId);
+    void sendRoleToClient(uint32_t clientId);
+    void assignRoleOnConnect(uint32_t clientId);
+    void setClientIdentity(uint32_t clientId, const String& key);
+    String getClientIdentity(uint32_t clientId) const;
+    bool hasViewer(uint32_t clientId) const;
+    void addViewer(uint32_t clientId);
+    void removeViewer(uint32_t clientId);
+
+    // Relay test state
+    void startRelayTest();
+    void advanceRelayTest();
+    void stopRelayTest(bool aborted);
     
     // Utility
     uint32_t calculateCrc32(const String& data);
     String formatContinuityArray();
+
+    bool relayTestActive;
+    std::vector<uint8_t> relayTestZones;
+    size_t relayTestStepIdx;
+    uint32_t relayTestStepStartMs;
+    uint32_t relayTestPulseMs;
 };
 
 extern WebSocketHandler wsHandler;
