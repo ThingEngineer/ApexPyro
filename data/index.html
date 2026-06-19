@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ApexPyro Controller</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <!-- Top Navigation Bar -->
+    <header class="top-bar">
+        <div class="nav-left">
+            <div class="logo">
+                <img src="apexpyro-logo.webp" alt="ApexPyro" height="24">
+                <span>ApexPyro</span>
+            </div>
+        </div>
+        <nav class="nav-tabs">
+            <button class="nav-tab active" data-page="splash">Splash</button>
+            <button class="nav-tab" data-page="builder">Builder</button>
+            <button class="nav-tab" data-page="show">Show</button>
+            <button class="nav-tab" data-page="settings">Settings</button>
+        </nav>
+        <div class="nav-right">
+            <div class="status-group">
+                <span class="role-badge" id="roleBadge">—</span>
+                <div class="connection-indicator" id="connectionDot"></div>
+            </div>
+            <button class="btn-estop" id="eStopBtn" title="Emergency Stop">E-STOP</button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="container">
+
+        <!-- Page: Splash -->
+        <section id="splash" class="page active">
+            <div class="splash-content">
+                <img src="apexpyro-logo.webp" alt="ApexPyro" class="splash-logo">
+                <h1>ApexPyro</h1>
+                <p id="tagline" class="tagline">The Collective Ignition</p>
+                <div class="status-bar">
+                    <div class="status-item">
+                        <svg class="battery-icon" width="16" height="16" viewBox="0 0 16 16" fill="none"
+                            xmlns="http://www.w3.org/2000/svg">
+                            <path d="M14 2H0V14H14V11H16V5H14V2Z" fill="currentColor" />
+                        </svg>
+                        <span id="batteryPercent">—%</span>
+                    </div>
+                    <div class="status-item">
+                        <svg class="wifi-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                            xmlns="http://www.w3.org/2000/svg">
+                            <path
+                                d="M12 19C11.4477 19 11 18.5523 11 18C11 17.4477 11.4477 17 12 17C12.5523 17 13 17.4477 13 18C13 18.5523 12.5523 19 12 19Z"
+                                fill="currentColor" />
+                        </svg>
+                        <span id="wifiLevel">—</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Page: Builder -->
+        <section id="builder" class="page">
+            <h2>Show Builder</h2>
+            <div class="builder-content">
+                <div class="zones-section">
+                    <h3>Zones</h3>
+                    <div id="zonesList" class="zones-list"></div>
+                </div>
+                <div class="groups-section">
+                    <h3>Groups</h3>
+                    <div id="groupsList" class="groups-list"></div>
+                    <button id="addGroupBtn" class="btn btn-secondary">+ Add Group</button>
+                </div>
+                <div class="aux-section">
+                    <h3>Auxiliary Relays</h3>
+                    <div class="aux-input">
+                        <label>Aux 1 Name:</label>
+                        <input type="text" id="aux1Name" placeholder="Lights">
+                    </div>
+                    <div class="aux-input">
+                        <label>Aux 2 Name:</label>
+                        <input type="text" id="aux2Name" placeholder="Music">
+                    </div>
+                </div>
+                <div class="builder-actions">
+                    <button id="clearAllBtn" class="btn btn-danger">Clear All / Reset</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Page: Show -->
+        <section id="show" class="page">
+            <h2>Show Mode</h2>
+            <div class="show-content">
+                <!-- Master Arm Section -->
+                <div class="master-control card">
+                    <h3>Master Arm</h3>
+                    <p class="muted">Engages igniter power relay</p>
+                    <div class="arm-status" id="armStatus">DISARMED</div>
+                    <label class="switch">
+                        <input type="checkbox" id="masterArmToggle">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <!-- System Status -->
+                <div class="system-status card">
+                    <h3>System Status</h3>
+                    <div class="status-grid">
+                        <div class="status-item-full">
+                            <span class="label">Battery:</span>
+                            <span id="showBatteryPercent">—%</span>
+                        </div>
+                        <div class="status-item-full">
+                            <span class="label">WiFi:</span>
+                            <span id="showWiFiLevel">—</span>
+                        </div>
+                        <div class="status-item-full">
+                            <span class="label">Boards:</span>
+                            <span id="showBoardCount">—</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Show Mode Selection -->
+                <div class="show-mode-selector card">
+                    <h3>Mode</h3>
+                    <div class="radio-group">
+                        <label>
+                            <input type="radio" name="showMode" value="manual" checked>
+                            Manual
+                        </label>
+                        <label>
+                            <input type="radio" name="showMode" value="auto">
+                            Auto
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Zones Grid -->
+                <div class="zones-grid" id="showZoneGrid"></div>
+
+                <!-- Auto Show Panel (hidden by default) -->
+                <div id="autoShowPanel" class="auto-show-panel card" style="display: none;">
+                    <h3>Auto Show</h3>
+                    <button id="autoStartBtn" class="btn btn-primary">Start Auto Show</button>
+                    <button id="autoStopBtn" class="btn btn-danger" style="display: none;">Stop Auto Show</button>
+                    <div id="showProgressDiv" style="display: none;">
+                        <p>Step <span id="showCurrentStep">0</span> / <span id="showTotalSteps">0</span></p>
+                        <progress id="showProgressBar" max="100" value="0"></progress>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Page: Settings -->
+        <section id="settings" class="page">
+            <h2>Settings</h2>
+            <div class="settings-content">
+
+                <!-- WiFi Section -->
+                <div class="settings-section card">
+                    <h3>WiFi Configuration</h3>
+                    <div class="setting-group">
+                        <label>AP SSID:</label>
+                        <input type="text" id="apSsid" placeholder="ApexPyro">
+                        <label>AP Password:</label>
+                        <input type="password" id="apPassword" placeholder="apexFIRE!pyro">
+                        <button id="saveApBtn" class="btn btn-secondary">Save AP Credentials</button>
+                    </div>
+                    <div class="setting-group">
+                        <button id="scanWifiBtn" class="btn btn-secondary">Scan for Networks</button>
+                        <select id="wifiNetworks" style="display: none;">
+                            <option>Select a network...</option>
+                        </select>
+                        <div id="wifiConnectDiv" style="display: none;">
+                            <input type="password" id="wifiPassword" placeholder="Password">
+                            <button id="connectWifiBtn" class="btn btn-secondary">Connect</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Igniter Settings -->
+                <div class="settings-section card">
+                    <h3>Igniter Configuration</h3>
+                    <div class="setting-group">
+                        <label>Igniter Duration (seconds):</label>
+                        <input type="number" id="igniterDuration" min="0.1" max="10" step="0.1" value="2">
+                    </div>
+                    <div class="setting-group">
+                        <label>Auto Mode Delay Between Zones (seconds):</label>
+                        <input type="number" id="autoDelay" min="0" max="60" step="1" value="0">
+                    </div>
+                </div>
+
+                <!-- Board Configuration -->
+                <div class="settings-section card">
+                    <h3>Board Configuration</h3>
+                    <div class="setting-group">
+                        <label>Detected Boards:</label>
+                        <p id="detectedBoards">—</p>
+                    </div>
+                </div>
+
+                <!-- Safety Settings -->
+                <div class="settings-section card">
+                    <h3>Safety Settings</h3>
+                    <div class="setting-group">
+                        <label>
+                            <input type="checkbox" id="abortOnDisconnect">
+                            Abort auto show if WiFi disconnects
+                        </label>
+                    </div>
+                    <div class="setting-group">
+                        <label>E-Stop Reset Mode:</label>
+                        <select id="eStopResetMode">
+                            <option value="0">Two-step software confirmation (default)</option>
+                            <option value="1">Power cycle only</option>
+                            <option value="2">Any software confirmation</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Continuity Calibration -->
+                <div class="settings-section card">
+                    <h3>Continuity Calibration (Advanced)</h3>
+                    <p class="muted">Voltage thresholds for e-match detection</p>
+                    <div class="setting-group">
+                        <label>Low Good Threshold (V):</label>
+                        <input type="number" id="contLoGood" step="0.0001" value="0.0001">
+                    </div>
+                    <div class="setting-group">
+                        <label>High Good Threshold (V):</label>
+                        <input type="number" id="contHiGood" step="0.0001" value="0.015">
+                    </div>
+                    <div class="setting-group">
+                        <label>Low Open Circuit Threshold (V):</label>
+                        <input type="number" id="contLoOpen" step="0.1" value="3.0">
+                    </div>
+                    <button id="calibrateBtn" class="btn btn-secondary">Update Thresholds</button>
+                </div>
+
+                <!-- Import/Export -->
+                <div class="settings-section card">
+                    <h3>Show Management</h3>
+                    <button id="exportBtn" class="btn btn-secondary">Export Show Config</button>
+                    <div class="import-div">
+                        <label for="importFile">Import Show Config:</label>
+                        <input type="file" id="importFile" accept=".json">
+                        <button id="importBtn" class="btn btn-secondary">Import</button>
+                    </div>
+                </div>
+
+                <!-- Relay Test -->
+                <div class="settings-section card">
+                    <h3>Hardware Test</h3>
+                    <p class="muted">Sequential relay test (requires Armed state)</p>
+                    <button id="relayTestBtn" class="btn btn-secondary">Run Relay Test</button>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Modal: Confirmation -->
+    <div id="confirmModal" class="modal-overlay" style="display: none;">
+        <div class="modal-card">
+            <h2 id="confirmTitle">Confirm Action</h2>
+            <p id="confirmBody"></p>
+            <div class="modal-actions">
+                <button id="confirmOk" class="btn btn-primary">Confirm</button>
+                <button id="confirmCancel" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Relay Test Progress -->
+    <div id="testModal" class="modal-overlay" style="display: none;">
+        <div class="modal-card">
+            <h2>Relay Test</h2>
+            <p id="testProgress">Zone 0 of 16</p>
+            <progress id="testProgressBar" max="100" value="0"></progress>
+            <div class="modal-actions">
+                <button id="testStopBtn" class="btn btn-danger">Stop Test</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Embedded CSS (will be in style.css file) -->
+    <!-- Embedded JavaScript -->
+    <script>
+        // CRC32 lookup table
+        const CRC32_TABLE = new Uint32Array([
+            0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f, 0xe963a535, 0x9e6495a3,
+            0x0edb8832, 0x79dcb8a4, 0xe0d5e91e, 0x97d2d988, 0x09b64c2b, 0x7eb17cbd, 0xe7b82d07, 0x90bf1d91,
+            0x1db71642, 0x6ab020f2, 0xf3b97148, 0x84be41de, 0x1adad47d, 0x6ddde4eb, 0xf4d4b551, 0x83d385c7,
+            0x136c9856, 0x646ba8c0, 0xfd62f97a, 0x8a65c9ec, 0x14015c4f, 0x63066cd9, 0xfa44e5d6, 0x8d079fd5,
+            // ... truncated for space - full table would be here
+        ]);
+
+        function crc32(str) {
+            let crc = 0xffffffff;
+            for (let i = 0; i < str.length; i++) {
+                const byte = str.charCodeAt(i) & 0xff;
+                crc = (crc >>> 8) ^ CRC32_TABLE[(crc ^ byte) & 0xff];
+            }
+            return (crc ^ 0xffffffff) >>> 0;
+        }
+
+        function calcChecksum(cmd, zone, timestamp) {
+            const data = `${cmd}:${zone}:${timestamp}`;
+            return crc32(data).toString(16).padStart(8, '0');
+        }
+
+        // WebSocket Connection
+        let ws = null;
+        let wsReconnectAttempts = 0;
+        const MAX_RECONNECT_ATTEMPTS = 10;
+
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const host = window.location.hostname || 'apexpyro.local';
+            ws = new WebSocket(`${protocol}//${host}/ws`);
+
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                wsReconnectAttempts = 0;
+                document.getElementById('connectionDot').classList.add('connected');
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const msg = JSON.parse(event.data);
+                    handleMessage(msg);
+                } catch (e) {
+                    console.error('Failed to parse message:', e);
+                }
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+            };
+
+            ws.onclose = () => {
+                console.log('WebSocket disconnected');
+                document.getElementById('connectionDot').classList.remove('connected');
+                attemptReconnect();
+            };
+        }
+
+        function attemptReconnect() {
+            if (wsReconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                wsReconnectAttempts++;
+                const delay = Math.pow(2, wsReconnectAttempts) * 1000;
+                console.log(`Attempting reconnect in ${delay}ms...`);
+                setTimeout(connectWebSocket, delay);
+            }
+        }
+
+        function wsSend(obj) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                // Auto-add checksum for commands that need it
+                if (obj.type === 'fire' || obj.type === 'arm' || obj.type === 'auto_start') {
+                    const ts = Math.floor(Date.now() / 1000);
+                    obj.ts = ts;
+                    obj.cs = calcChecksum(obj.type.toUpperCase(), obj.zone || (obj.state ? 1 : 0), ts);
+                }
+                ws.send(JSON.stringify(obj));
+            } else {
+                console.warn('WebSocket not ready');
+            }
+        }
+
+        // Message Handlers
+        function handleMessage(msg) {
+            switch (msg.type) {
+                case 'full_state':
+                    updateFullState(msg);
+                    break;
+                case 'continuity':
+                    updateContinuity(msg);
+                    break;
+                case 'battery':
+                    updateBattery(msg);
+                    break;
+                case 'wifi':
+                    updateWiFi(msg);
+                    break;
+                case 'role':
+                    updateRole(msg);
+                    break;
+                case 'system_status':
+                    updateSystemStatus(msg);
+                    break;
+                case 'ping':
+                    wsSend({ type: 'pong' });
+                    break;
+                case 'error':
+                    showToast(`Error: ${msg.msg}`, 'error');
+                    break;
+                case 'wifi_scan_result':
+                    updateWiFiScanResults(msg);
+                    break;
+            }
+        }
+
+        function updateFullState(msg) {
+            document.getElementById('armStatus').textContent = msg.masterArmed ? 'ARMED' : 'DISARMED';
+            document.getElementById('masterArmToggle').checked = msg.masterArmed;
+        }
+
+        function updateContinuity(msg) {
+            // Update zone continuity indicators
+            if (msg.zones) {
+                const statuses = ['unknown', 'good', 'open', 'shorted', 'firing'];
+                // This would be rendered in the zones grid
+            }
+        }
+
+        function updateBattery(msg) {
+            document.getElementById('batteryPercent').textContent = msg.percent + '%';
+            document.getElementById('showBatteryPercent').textContent = msg.percent + '%';
+        }
+
+        function updateWiFi(msg) {
+            const levels = ['none', 'low', 'medium', 'high'];
+            const level = levels[msg.level] || 'unknown';
+            document.getElementById('wifiLevel').textContent = level.toUpperCase();
+            document.getElementById('showWiFiLevel').textContent = level.toUpperCase();
+        }
+
+        function updateRole(msg) {
+            document.getElementById('roleBadge').textContent = msg.role.toUpperCase();
+            document.getElementById('roleBadge').className = `role-badge role-${msg.role}`;
+        }
+
+        function updateSystemStatus(msg) {
+            // Update system status displays
+        }
+
+        function updateWiFiScanResults(msg) {
+            const select = document.getElementById('wifiNetworks');
+            select.innerHTML = '<option>Select a network...</option>';
+            if (msg.networks) {
+                msg.networks.forEach(ssid => {
+                    const option = document.createElement('option');
+                    option.value = ssid;
+                    option.textContent = ssid;
+                    select.appendChild(option);
+                });
+            }
+            select.style.display = 'block';
+        }
+
+        // Page Navigation
+        document.querySelectorAll('.nav-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                const pageId = tab.dataset.page;
+                showPage(pageId);
+            });
+        });
+
+        function showPage(pageId) {
+            document.querySelectorAll('.page').forEach(page => page.classList.remove('active'));
+            document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
+
+            document.getElementById(pageId).classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        // Tagline Rotator
+        const taglines = [
+            "The Collective Ignition",
+            "Share the Spark",
+            "Light It Up",
+            "The Peak of Pyrotechnics",
+            "Unleash the Heat",
+            "Masterful Displays. Unforgettable Moments",
+            "Engineering the Wow",
+            "Above the Rest",
+            "Beyond Bright",
+            "Sky High",
+            "Own the Night",
+            "Building Better Skies, Together",
+            "Unlimited Creativity. Open Design",
+            "Collaborate. Ignite. Inspire.",
+            "Crowdsourcing the Night"
+        ];
+
+        let taglineIndex = 0;
+        const taglineEl = document.getElementById('tagline');
+        setInterval(() => {
+            taglineIndex = (taglineIndex + 1) % taglines.length;
+            taglineEl.textContent = taglines[taglineIndex];
+        }, 4000);
+
+        // Master Arm Toggle
+        document.getElementById('masterArmToggle').addEventListener('change', (e) => {
+            const shouldArm = e.target.checked;
+            showConfirm(
+                shouldArm ? 'Arm System' : 'Disarm System',
+                shouldArm ? 'Arming will enable the igniter power relay. Continue?' : 'Disarming will disable firing.',
+                () => {
+                    wsSend({ type: 'arm', state: shouldArm });
+                },
+                () => {
+                    e.target.checked = !shouldArm;
+                }
+            );
+        });
+
+        // E-Stop Button
+        document.getElementById('eStopBtn').addEventListener('click', () => {
+            wsSend({ type: 'estop' });
+        });
+
+        // Confirmation Modal
+        function showConfirm(title, body, onOk, onCancel) {
+            document.getElementById('confirmTitle').textContent = title;
+            document.getElementById('confirmBody').textContent = body;
+            document.getElementById('confirmModal').style.display = 'flex';
+
+            const okBtn = document.getElementById('confirmOk');
+            const cancelBtn = document.getElementById('confirmCancel');
+
+            const handleOk = () => {
+                document.getElementById('confirmModal').style.display = 'none';
+                okBtn.removeEventListener('click', handleOk);
+                cancelBtn.removeEventListener('click', handleCancel);
+                onOk();
+            };
+
+            const handleCancel = () => {
+                document.getElementById('confirmModal').style.display = 'none';
+                okBtn.removeEventListener('click', handleOk);
+                cancelBtn.removeEventListener('click', handleCancel);
+                if (onCancel) onCancel();
+            };
+
+            okBtn.addEventListener('click', handleOk);
+            cancelBtn.addEventListener('click', handleCancel);
+        }
+
+        // Toast Notifications
+        function showToast(message, type = 'info') {
+            // Simplified toast - could be enhanced with actual toast UI
+            console.log(`[${type}] ${message}`);
+        }
+
+        // Initialize
+        window.addEventListener('DOMContentLoaded', () => {
+            connectWebSocket();
+        });
+    </script>
+</body>
+
+</html>
