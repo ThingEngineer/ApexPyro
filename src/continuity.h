@@ -26,6 +26,8 @@ public:
     void setThresholds(float loGood, float hiGood, float loOpen);
     
 private:
+    bool adsAvailable;
+
     // Zone status array (48 zones total)
     ContinuityStatus zoneStatus[MAX_ZONES];
     uint32_t lastScanMs;

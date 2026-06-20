@@ -9,25 +9,31 @@ Adafruit_ADS1115 ads;
 ContinuityManager continuityManager;
 
 ContinuityManager::ContinuityManager()
-    : lastScanMs(0), lastBatteryScanMs(0), currentMuxPosition(0) {
+    : adsAvailable(false), lastScanMs(0), lastBatteryScanMs(0), currentMuxPosition(0),
+            threshLoGood(DEFAULT_CONTINUITY_LOW_GOOD),
+            threshHiGood(DEFAULT_CONTINUITY_HI_GOOD),
+            threshLoOpen(DEFAULT_CONTINUITY_LOW_OPEN_CIRCUIT) {
     
     // Initialize all zones to unknown
     for (uint8_t i = 0; i < MAX_ZONES; i++) {
         zoneStatus[i] = ContinuityStatus::UNKNOWN;
     }
     
-    // Load thresholds from storage
-    threshLoGood = storage.getContinuityLoGood();
-    threshHiGood = storage.getContinuityHiGood();
-    threshLoOpen = storage.getContinuityLoOpen();
 }
 
 void ContinuityManager::begin() {
+    // Storage is initialized by main before this point.
+    threshLoGood = storage.getContinuityLoGood();
+    threshHiGood = storage.getContinuityHiGood();
+    threshLoOpen = storage.getContinuityLoOpen();
+
     // Initialize ADC
     if (!ads.begin(ADS1115_I2C_ADDR)) {
         Serial.println("[ContinuityManager] ADS1115 not found!");
+        adsAvailable = false;
         return;
     }
+    adsAvailable = true;
     
     // Set gain to ±4.096V for all channels
     ads.setGain(GAIN_ONE);
@@ -38,6 +44,10 @@ void ContinuityManager::begin() {
 }
 
 void ContinuityManager::update() {
+    if (!adsAvailable) {
+        return;
+    }
+
     uint32_t now = millis();
     
     // Scan zones periodically
@@ -68,6 +78,10 @@ void ContinuityManager::setMuxPosition(uint8_t position) {
 }
 
 float ContinuityManager::readAdcChannel(uint8_t channel) {
+    if (!adsAvailable) {
+        return 0.0f;
+    }
+
     if (channel > 3) return 0.0f;
     
     int16_t adc = ads.readADC_SingleEnded(channel);
@@ -140,6 +154,10 @@ void ContinuityManager::readBatteryVoltage() {
 }
 
 float ContinuityManager::getBatteryVoltage() {
+    if (!adsAvailable) {
+        return 0.0f;
+    }
+
     float adcVolt = readAdcChannel(ADS1115_CHANNEL_BATTERY);
     return adcVolt * VBAT_SCALE;
 }
