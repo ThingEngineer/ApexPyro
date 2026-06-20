@@ -802,10 +802,8 @@ input:checked + .slider::before {
 /* ========================================================================== */
 
 .settings-content {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 1.5rem;
-  align-items: start;
+  columns: 3 300px;
+  column-gap: 1.5rem;
 }
 
 .settings-section {
@@ -813,6 +811,11 @@ input:checked + .slider::before {
   border-radius: 12px;
   padding: 1.5rem;
   min-width: 0;
+  break-inside: avoid;
+  -webkit-column-break-inside: avoid;
+  display: inline-block;
+  width: 100%;
+  margin-bottom: 1.5rem;
 }
 
 .settings-section h3 {
@@ -1076,6 +1079,10 @@ progress::-moz-progress-bar {
   .zones-grid {
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   }
+
+  .settings-content {
+    columns: 2 300px;
+  }
 }
 
 @media (max-width: 768px) {
@@ -1084,10 +1091,24 @@ progress::-moz-progress-bar {
     gap: 0.75rem;
   }
 
+  .nav-left {
+    order: 1;
+    flex: 1;
+  }
+
+  .nav-right {
+    order: 2;
+    flex: none;
+  }
+
   .nav-tabs {
+    order: 3;
+    flex: none;
     width: 100%;
     flex-wrap: wrap;
-    order: 3;
+    border-top: 1px solid var(--border-color);
+    padding-top: 0.5rem;
+    justify-content: space-around;
   }
 
   .nav-tab {
@@ -1116,7 +1137,7 @@ progress::-moz-progress-bar {
   }
 
   .settings-content {
-    grid-template-columns: 1fr;
+    columns: 1;
   }
 
   #wifiConnectDiv {
