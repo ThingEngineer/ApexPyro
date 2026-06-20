@@ -2,6 +2,7 @@
 #define RELAY_MANAGER_H
 
 #include <Arduino.h>
+#include <vector>
 #include "config.h"
 
 class RelayManager {
@@ -21,6 +22,7 @@ public:
     
     // Zone Firing
     void startZoneFire(uint8_t zoneIdx, uint32_t durationMs);
+    void startZonesFire(const std::vector<uint8_t>& zoneIndices, uint32_t durationMs);
     void stopZoneFire();
     bool isZoneFiring();
     uint8_t getFiringZoneIdx();
@@ -35,16 +37,28 @@ public:
     
     // Callback for when zone firing completes
     void onZoneFireComplete();
-    
+
+    // Set after each auto-off; cleared by caller (wsHandler)
+    bool consumeFireComplete();
+
 private:
+    bool fireJustCompleted;
     bool masterArmed;
     bool auxState[2];  // AUX relay 1 and 2 states
     
     // Firing state
     uint8_t firingZoneIdx;
-    uint32_t firingStartMs;
-    uint32_t firingDurationMs;
+    uint8_t firingZoneCount;
+    bool firingZones[MAX_ZONES];
+    uint32_t zoneFireUntilMs[MAX_ZONES];
     bool isFiring;
+
+    uint8_t boardPort0Mask[MAX_BOARDS];
+    uint8_t boardPort1Mask[MAX_BOARDS];
+
+    void rebuildOutputMasksFromActiveZones();
+    void applyOutputMasks();
+    void clearAllActiveZones();
 };
 
 extern RelayManager relayManager;
