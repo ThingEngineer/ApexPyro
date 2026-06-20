@@ -33,6 +33,7 @@
                 <div class="connection-indicator" id="connectionDot"></div>
             </div>
             <button class="btn-estop" id="eStopBtn" title="Emergency Stop">E-STOP</button>
+            <button class="btn btn-secondary btn-reset" id="eStopResetBtn" title="Reset latched E-Stop">Reset</button>
         </div>
     </header>
 
@@ -43,7 +44,7 @@
         <section id="splash" class="page active">
             <div class="splash-content">
                 <img src="apexpyro-logo.webp" alt="ApexPyro" class="splash-logo">
-                <h1>ApexPyro</h1>
+                <!-- <h1>ApexPyro</h1> -->
                 <p id="tagline" class="tagline">The Collective Ignition</p>
                 <div class="status-bar">
                     <div class="status-item">
@@ -54,12 +55,7 @@
                         <span id="batteryPercent">—%</span>
                     </div>
                     <div class="status-item">
-                        <svg class="wifi-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                            xmlns="http://www.w3.org/2000/svg">
-                            <path
-                                d="M12 19C11.4477 19 11 18.5523 11 18C11 17.4477 11.4477 17 12 17C12.5523 17 13 17.4477 13 18C13 18.5523 12.5523 19 12 19Z"
-                                fill="currentColor" />
-                        </svg>
+                        <img id="wifiIcon" class="wifi-status-icon" src="wifi-none.svg" alt="WiFi signal">
                         <span id="wifiLevel">—</span>
                     </div>
                 </div>
@@ -74,24 +70,24 @@
                     <h3>Zones</h3>
                     <div id="zonesList" class="zones-list"></div>
                 </div>
-                <div class="groups-section">
-                    <h3>Groups</h3>
-                    <div id="groupsList" class="groups-list"></div>
-                    <button id="addGroupBtn" class="btn btn-secondary">+ Add Group</button>
-                </div>
-                <div class="aux-section">
-                    <h3>Auxiliary Relays</h3>
-                    <div class="aux-input">
-                        <label>Aux 1 Name:</label>
-                        <input type="text" id="aux1Name" placeholder="Lights">
+                <div class="builder-footer">
+                    <details class="aux-section" id="auxSectionDetails">
+                        <summary>Auxiliary Relays</summary>
+                        <div class="aux-input">
+                            <label>Aux 1 Name:</label>
+                            <input type="text" id="aux1Name" placeholder="Lights">
+                        </div>
+                        <div class="aux-input">
+                            <label>Aux 2 Name:</label>
+                            <input type="text" id="aux2Name" placeholder="Music">
+                        </div>
+                    </details>
+                    <div class="builder-actions">
+                        <span id="builderDirtyBadge" class="builder-dirty-badge" style="display: none;">Unsaved
+                            changes</span>
+                        <button id="saveBuilderBtn" class="btn btn-primary">Save Builder Changes</button>
+                        <button id="clearAllBtn" class="btn btn-danger">Clear All / Reset</button>
                     </div>
-                    <div class="aux-input">
-                        <label>Aux 2 Name:</label>
-                        <input type="text" id="aux2Name" placeholder="Music">
-                    </div>
-                </div>
-                <div class="builder-actions">
-                    <button id="clearAllBtn" class="btn btn-danger">Clear All / Reset</button>
                 </div>
             </div>
         </section>
@@ -121,6 +117,7 @@
                         </div>
                         <div class="status-item-full">
                             <span class="label">WiFi:</span>
+                            <img id="showWiFiIcon" class="wifi-status-icon" src="wifi-none.svg" alt="WiFi signal">
                             <span id="showWiFiLevel">—</span>
                         </div>
                         <div class="status-item-full">
@@ -156,6 +153,14 @@
                     <div id="showProgressDiv" style="display: none;">
                         <p>Step <span id="showCurrentStep">0</span> / <span id="showTotalSteps">0</span></p>
                         <progress id="showProgressBar" max="100" value="0"></progress>
+                    </div>
+                </div>
+
+                <div class="aux-controls card">
+                    <h3>Auxiliary Controls</h3>
+                    <div class="aux-button-row">
+                        <button id="auxToggle0" class="btn btn-secondary" data-relay="0">Aux 1 Off</button>
+                        <button id="auxToggle1" class="btn btn-secondary" data-relay="1">Aux 2 Off</button>
                     </div>
                 </div>
             </div>
@@ -200,10 +205,12 @@
                                 autocomplete="new-password">
                         </div>
                         <div class="wifi-action-row">
+                            <button id="scanWifiBtn" class="btn btn-secondary">Scan Networks</button>
                             <button id="connectWifiBtn" class="btn btn-secondary">Connect</button>
                             <button id="forgetWifiBtn" class="btn btn-danger" style="display: none;">Forget
                                 Network</button>
                         </div>
+                        <div id="wifiScanResults" class="wifi-scan-results" style="display: none;"></div>
                         <div id="wifiConnectStatus" class="wifi-connect-status" style="display: none;">
                             <span id="wifiConnectStatusText">Connecting...</span>
                         </div>
@@ -221,6 +228,7 @@
                         <label>Auto Mode Delay Between Zones (seconds):</label>
                         <input type="number" id="autoDelay" min="0" max="60" step="1" value="0">
                     </div>
+                    <button id="saveIgniterBtn" class="btn btn-secondary">Save Igniter Settings</button>
                 </div>
 
                 <!-- Board Configuration -->
@@ -316,11 +324,14 @@
         </div>
     </div>
 
+    <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+
     <!-- Embedded CSS (will be in style.css file) -->
     <!-- Embedded JavaScript -->
     <script>
         const MAX_ZONES = 48;
         const MAX_GROUPS = 16;
+        const READY_WINDOW_MS = 5000;
         const PAGE_PATHS = {
             splash: '/',
             builder: '/builder',
@@ -349,6 +360,14 @@
             boardCount: 0,
             batteryPercent: null,
             wifiLevel: 'NONE',
+            wifiRssi: 0,
+            showRunning: false,
+            showState: 0,
+            showStep: 0,
+            showTotal: 0,
+            estopActive: false,
+            estopResetPending: false,
+            auxState: [false, false],
             wifiConfig: {
                 apSsid: 'ApexPyro',
                 apPassword: 'apexFIRE!pyro',
@@ -361,9 +380,20 @@
             },
             settings: { ...DEFAULT_SETTINGS },
             auxNames: [...DEFAULT_AUX_NAMES],
-            groups: [],
             zones: Array.from({ length: MAX_ZONES }, (_, index) => defaultZone(index)),
-            relayTestRunning: false
+            relayTestRunning: false,
+            wifiScanResults: []
+        };
+
+        const readyStateByZone = new Map();
+        const firingStateByZone = new Map();
+        const readyStateByGroup = new Map();
+        const firingStateByGroup = new Map();
+
+        let builderDirty = false;
+        let builderSavedSnapshot = {
+            zones: appState.zones.map((zone) => ({ ...zone })),
+            auxNames: [...appState.auxNames]
         };
 
         let ws = null;
@@ -403,7 +433,6 @@
         function calcChecksum(cmd, zone, timestamp) {
             const data = `${cmd}:${zone}:${timestamp}`;
             let crc = 0xffffffff;
-
             for (let i = 0; i < data.length; i++) {
                 const byte = data.charCodeAt(i) & 0xff;
                 for (let bitIndex = 0; bitIndex < 8; bitIndex++) {
@@ -415,8 +444,19 @@
                     }
                 }
             }
-
             return crc.toString(16).padStart(8, '0');
+        }
+
+        function getOrCreateClientKey() {
+            let key = localStorage.getItem(CLIENT_KEY_STORAGE_KEY);
+            if (key && key.length > 0) {
+                return key;
+            }
+            key = window.crypto && typeof window.crypto.randomUUID === 'function'
+                ? window.crypto.randomUUID()
+                : `apx-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
+            localStorage.setItem(CLIENT_KEY_STORAGE_KEY, key);
+            return key;
         }
 
         function connectWebSocket() {
@@ -452,9 +492,9 @@
 
         function attemptReconnect() {
             if (wsReconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+                showToast('WebSocket reconnect limit reached', 'error');
                 return;
             }
-
             wsReconnectAttempts += 1;
             const delay = Math.min(Math.pow(2, wsReconnectAttempts) * 1000, 15000);
             setTimeout(connectWebSocket, delay);
@@ -467,9 +507,9 @@
             }
 
             const payload = { ...obj };
-            if (payload.type === 'fire' || payload.type === 'arm' || payload.type === 'auto_start') {
+            if (payload.type === 'fire' || payload.type === 'fire_group' || payload.type === 'arm' || payload.type === 'auto_start') {
                 const ts = Math.floor(Date.now() / 1000);
-                const checksumValue = payload.zone ?? (payload.state ? 1 : 0);
+                const checksumValue = payload.zone ?? payload.group ?? (payload.state ? 1 : 0);
                 payload.ts = ts;
                 payload.cs = calcChecksum(payload.type.toUpperCase(), checksumValue, ts);
             }
@@ -492,6 +532,9 @@
                 case 'wifi':
                     updateWiFi(msg);
                     break;
+                case 'wifi_scan_results':
+                    updateWifiScanResults(msg);
+                    break;
                 case 'role':
                     updateRole(msg);
                     break;
@@ -502,7 +545,13 @@
                     handleZoneFired(msg);
                     break;
                 case 'show_progress':
-                    updateRelayTestProgress(msg);
+                    handleShowProgress(msg);
+                    break;
+                case 'show_state':
+                    updateShowState(msg);
+                    break;
+                case 'export_show':
+                    handleExportMessage(msg);
                     break;
                 case 'estop_active':
                     handleEStopActive();
@@ -511,7 +560,7 @@
                     wsSend({ type: 'pong' });
                     break;
                 case 'error':
-                    showToast(`Error: ${msg.msg}`, 'error');
+                    showToast(msg.msg || 'Unknown error', 'error');
                     break;
                 default:
                     console.log('Unhandled message', msg);
@@ -520,9 +569,13 @@
 
         function updateFullState(msg) {
             const wasConnecting = Boolean(appState.wifiConfig.connecting);
-
             appState.masterArmed = Boolean(msg.masterArmed);
             appState.boardCount = msg.boardCount ?? msg.detectedBoards ?? 0;
+            appState.estopActive = Boolean(msg.estopActive);
+            appState.estopResetPending = Boolean(msg.estopResetPending);
+            appState.showRunning = Boolean(msg.showRunning);
+            appState.showState = Number(msg.showState ?? 0);
+
             appState.wifiConfig = {
                 ...appState.wifiConfig,
                 ...(msg.wifiConfig || {})
@@ -541,23 +594,15 @@
                 wifiConnectStartAt = 0;
             }
 
-            appState.settings = {
-                ...appState.settings,
-                ...(msg.settings || {})
-            };
+            appState.settings = { ...appState.settings, ...(msg.settings || {}) };
             appState.auxNames = Array.isArray(msg.auxNames) && msg.auxNames.length >= 2
                 ? msg.auxNames
                 : [...appState.auxNames];
-            appState.groups = Array.isArray(msg.groups)
-                ? msg.groups.map((group) => ({
-                    id: Number(group.id ?? 0),
-                    name: group.name ?? '',
-                    members: group.members ?? '',
-                    order: Number(group.order ?? 0)
-                })).sort((left, right) => left.order - right.order || left.id - right.id)
-                : [];
-            appState.zones = Array.isArray(msg.zones)
-                ? msg.zones.map((zone, index) => ({
+            appState.auxState = Array.isArray(msg.auxState) && msg.auxState.length >= 2
+                ? [Boolean(msg.auxState[0]), Boolean(msg.auxState[1])]
+                : appState.auxState;
+            if (Array.isArray(msg.zones)) {
+                appState.zones = msg.zones.map((zone, index) => ({
                     ...defaultZone(index),
                     id: Number(zone.id ?? index),
                     description: zone.description ?? '',
@@ -566,8 +611,12 @@
                     group: Number(zone.group ?? 0),
                     order: Number(zone.order ?? index),
                     continuity: Number(zone.continuity ?? 0)
-                }))
-                : appState.zones;
+                }));
+            }
+
+            if (!builderDirty) {
+                refreshBuilderSavedSnapshot();
+            }
 
             renderApp();
         }
@@ -576,10 +625,9 @@
             if (!Array.isArray(msg.zones)) {
                 return;
             }
-
             appState.zones = appState.zones.map((zone, index) => ({
                 ...zone,
-                continuity: Number(msg.zones[index] ?? zone.continuity ?? 0)
+                continuity: Number(msg.zones[index] ?? zone.continuity)
             }));
             renderShowZones();
         }
@@ -592,9 +640,34 @@
 
         function updateWiFi(msg) {
             const levels = ['NONE', 'LOW', 'MEDIUM', 'HIGH'];
+            const iconForRssi = (rssiValue, connected) => {
+                if (!connected) return 'wifi-none.svg';
+                if (rssiValue >= -55) return 'wifi-high.svg';
+                if (rssiValue >= -70) return 'wifi-medium.svg';
+                if (rssiValue >= -82) return 'wifi-low.svg';
+                return 'wifi-none.svg';
+            };
+
             appState.wifiLevel = levels[msg.level] || 'UNKNOWN';
-            document.getElementById('wifiLevel').textContent = appState.wifiLevel;
-            document.getElementById('showWiFiLevel').textContent = appState.wifiLevel;
+            appState.wifiRssi = Number(msg.rssi ?? 0);
+
+            const ssid = String(msg.ssid || appState.wifiConfig.currentSsid || '');
+            const connected = Boolean(msg.connected);
+            const statusText = connected && ssid.length > 0
+                ? `${ssid} · ${appState.wifiRssi} dBm`
+                : `${ssid || 'AP mode'} · ${appState.wifiLevel}`;
+            const iconSrc = iconForRssi(appState.wifiRssi, connected);
+
+            document.getElementById('wifiLevel').textContent = statusText;
+            document.getElementById('showWiFiLevel').textContent = statusText;
+            document.getElementById('wifiIcon').src = iconSrc;
+            document.getElementById('showWiFiIcon').src = iconSrc;
+        }
+
+        function updateWifiScanResults(msg) {
+            appState.wifiScanResults = Array.isArray(msg.networks) ? msg.networks : [];
+            renderWifiScanResults();
+            showToast(`Found ${appState.wifiScanResults.length} network(s)`, 'info');
         }
 
         function updateRole(msg) {
@@ -608,6 +681,115 @@
             renderShowZones();
         }
 
+        function updateSystemStatus(msg) {
+            if (typeof msg.masterArmed === 'boolean') {
+                appState.masterArmed = msg.masterArmed;
+            }
+            if (Array.isArray(msg.auxState) && msg.auxState.length >= 2) {
+                appState.auxState = [Boolean(msg.auxState[0]), Boolean(msg.auxState[1])];
+            }
+            renderArmStatus();
+            renderAuxButtons();
+            renderShowZones();
+        }
+
+        function updateShowState(msg) {
+            appState.showRunning = Boolean(msg.running);
+            appState.showState = Number(msg.state ?? appState.showState);
+            appState.showStep = Number(msg.step ?? appState.showStep);
+            appState.showTotal = Number(msg.total ?? appState.showTotal);
+            renderShowStatePanel();
+        }
+
+        function handleShowProgress(msg) {
+            const current = Number(msg.step ?? 0);
+            const total = Number(msg.total ?? 0);
+            const zone = Number(msg.zone ?? 0);
+
+            if (appState.relayTestRunning && total > 0) {
+                const progress = total > 0 ? Math.round((current / total) * 100) : 0;
+                document.getElementById('testModal').style.display = 'flex';
+                document.getElementById('testProgress').textContent = `Zone ${zone + 1} of ${total}`;
+                document.getElementById('testProgressBar').value = progress;
+            }
+
+            if (appState.showRunning && total > 0) {
+                appState.showStep = current;
+                appState.showTotal = total;
+                renderShowStatePanel();
+            }
+
+            if (total === 0 && appState.relayTestRunning) {
+                appState.relayTestRunning = false;
+                document.getElementById('testModal').style.display = 'none';
+                document.getElementById('testProgressBar').value = 0;
+                document.getElementById('testProgress').textContent = 'Relay test complete';
+            }
+        }
+
+        function handleZoneFired(msg) {
+            const zoneId = Number(msg.zone ?? -1);
+            const durationMs = Number(msg.duration ?? 0);
+            if (zoneId < 0) {
+                return;
+            }
+
+            readyStateByZone.delete(zoneId);
+            if (durationMs > 0) {
+                firingStateByZone.set(zoneId, Date.now() + durationMs);
+            }
+
+            const zoneInfo = appState.zones.find((zone) => zone.id === zoneId);
+            if (zoneInfo && zoneInfo.group > 0) {
+                readyStateByGroup.delete(zoneInfo.group);
+                if (durationMs > 0) {
+                    firingStateByGroup.set(zoneInfo.group, Date.now() + durationMs);
+                }
+            }
+
+            appState.zones = appState.zones.map((zone) => ({
+                ...zone,
+                continuity: zone.id === zoneId ? 4 : zone.continuity
+            }));
+            renderShowZones();
+        }
+
+        function handleExportMessage(msg) {
+            let payload = null;
+            if (msg.dataRaw) {
+                try {
+                    payload = JSON.parse(msg.dataRaw);
+                } catch (error) {
+                    showToast('Export payload was invalid', 'error');
+                    return;
+                }
+            }
+            if (!payload) {
+                showToast('No export data returned', 'error');
+                return;
+            }
+
+            const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'apexpyro-show.json';
+            link.click();
+            URL.revokeObjectURL(url);
+            showToast('Show configuration exported', 'success');
+        }
+
+        function handleEStopActive() {
+            appState.masterArmed = false;
+            appState.estopActive = true;
+            appState.relayTestRunning = false;
+            document.getElementById('testModal').style.display = 'none';
+            renderArmStatus();
+            renderShowZones();
+            renderEStopResetButton();
+            showToast('Emergency stop activated', 'error');
+        }
+
         function renderRoleBadge() {
             const badge = document.getElementById('roleBadge');
             const badgeText = document.getElementById('roleBadgeText');
@@ -619,138 +801,98 @@
             badge.className = `role-badge role-${role} ${locked ? 'is-locked' : 'is-unlocked'}`;
             badge.disabled = role !== 'controller';
             badge.setAttribute('aria-pressed', locked ? 'true' : 'false');
-
             lockIcon.src = locked ? 'lock.svg' : 'lock-open.svg';
             lockIcon.alt = locked ? 'Locked' : 'Unlocked';
-
-            if (role === 'controller') {
-                badge.title = locked ? 'Controller is locked. Click to unlock role handoff.' : 'Controller is unlocked. Click to lock role handoff.';
-            } else {
-                badge.title = locked ? 'Controller role is locked by the active controller.' : 'Controller role is unlocked by the active controller.';
-            }
-        }
-
-        function getOrCreateClientKey() {
-            let key = localStorage.getItem(CLIENT_KEY_STORAGE_KEY);
-            if (key && key.length > 0) {
-                return key;
-            }
-
-            if (window.crypto && typeof window.crypto.randomUUID === 'function') {
-                key = window.crypto.randomUUID();
-            } else {
-                key = `apx-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
-            }
-
-            localStorage.setItem(CLIENT_KEY_STORAGE_KEY, key);
-            return key;
-        }
-
-        function toggleRoleLock() {
-            if (appState.role !== 'controller') {
-                showToast('Only the active controller can change role lock', 'error');
-                return;
-            }
-
-            wsSend({ type: 'set_role_lock', locked: !(appState.roleLocked !== false) });
-        }
-
-        function updateSystemStatus(msg) {
-            if (typeof msg.masterArmed === 'boolean') {
-                appState.masterArmed = msg.masterArmed;
-            }
-            renderArmStatus();
-            renderShowZones();
-        }
-
-        function handleZoneFired(msg) {
-            const zoneId = Number(msg.zone ?? -1);
-            if (zoneId < 0) {
-                return;
-            }
-
-            appState.zones = appState.zones.map((zone) => ({
-                ...zone,
-                continuity: zone.id === zoneId ? 4 : zone.continuity
-            }));
-            renderShowZones();
-        }
-
-        function updateRelayTestProgress(msg) {
-            const current = Number(msg.step ?? 0);
-            const total = Number(msg.total ?? 0);
-            const zone = Number(msg.zone ?? 0);
-
-            if (total === 0) {
-                appState.relayTestRunning = false;
-                document.getElementById('testModal').style.display = 'none';
-                document.getElementById('testProgressBar').value = 0;
-                document.getElementById('testProgress').textContent = 'Relay test complete';
-                return;
-            }
-
-            appState.relayTestRunning = true;
-            const progress = total > 0 ? Math.round((current / total) * 100) : 0;
-
-            document.getElementById('testModal').style.display = 'flex';
-            document.getElementById('testProgress').textContent = `Zone ${zone + 1} of ${total}`;
-            document.getElementById('testProgressBar').value = progress;
-        }
-
-        function handleEStopActive() {
-            appState.masterArmed = false;
-            appState.relayTestRunning = false;
-            document.getElementById('testModal').style.display = 'none';
-            renderArmStatus();
-            renderShowZones();
-            showToast('Emergency stop activated', 'error');
         }
 
         function renderApp() {
             hydrateSettingsForm();
             renderRoleBadge();
             renderArmStatus();
-            renderBuilderZones();
-            renderGroups();
+            if (!builderDirty) {
+                renderBuilderZones();
+            }
+            updateBuilderDirtyBadge();
             renderShowZones();
+            renderAuxButtons();
+            renderEStopResetButton();
+            renderShowStatePanel();
             syncShowMode();
             document.getElementById('showBoardCount').textContent = `${appState.boardCount}`;
             document.getElementById('detectedBoards').textContent = `${appState.boardCount}`;
         }
 
+        function renderArmStatus() {
+            const armed = appState.masterArmed;
+            document.getElementById('armStatus').textContent = armed ? 'ARMED' : 'DISARMED';
+            document.getElementById('masterArmToggle').checked = armed;
+            document.querySelector('.master-control').classList.toggle('armed', armed);
+        }
+
+        function renderEStopResetButton() {
+            const button = document.getElementById('eStopResetBtn');
+            button.style.display = appState.estopActive ? 'inline-flex' : 'none';
+            button.textContent = appState.estopResetPending ? 'Confirm Reset' : 'Reset';
+            button.disabled = appState.role !== 'controller';
+        }
+
+        function renderShowStatePanel() {
+            const startBtn = document.getElementById('autoStartBtn');
+            const stopBtn = document.getElementById('autoStopBtn');
+            const progressDiv = document.getElementById('showProgressDiv');
+            const progressBar = document.getElementById('showProgressBar');
+
+            if (appState.showRunning) {
+                startBtn.style.display = 'none';
+                stopBtn.style.display = 'inline-flex';
+                progressDiv.style.display = 'block';
+                document.getElementById('showCurrentStep').textContent = `${appState.showStep}`;
+                document.getElementById('showTotalSteps').textContent = `${appState.showTotal}`;
+                progressBar.value = appState.showTotal > 0 ? Math.round((appState.showStep / appState.showTotal) * 100) : 0;
+            } else {
+                startBtn.style.display = 'inline-flex';
+                stopBtn.style.display = 'none';
+                progressDiv.style.display = 'none';
+            }
+        }
+
+        function renderAuxButtons() {
+            for (let i = 0; i < 2; i++) {
+                const button = document.getElementById(`auxToggle${i}`);
+                const enabled = appState.auxState[i];
+                const label = appState.auxNames[i] || `Aux ${i + 1}`;
+                button.textContent = `${label} ${enabled ? 'On' : 'Off'}`;
+                button.className = `btn ${enabled ? 'btn-primary' : 'btn-secondary'}`;
+                button.disabled = appState.role !== 'controller';
+            }
+        }
+
         function hydrateSettingsForm() {
             document.getElementById('apSsid').value = appState.wifiConfig.apSsid || 'ApexPyro';
             document.getElementById('apPassword').value = appState.wifiConfig.apPassword || 'apexFIRE!pyro';
-
-            // External network inputs
             document.getElementById('extSsid').value = appState.wifiConfig.clientSsid || '';
             document.getElementById('extPassword').value = appState.wifiConfig.clientPassword || '';
 
-            // Forget button: visible only when a network is saved
             const hasSaved = (appState.wifiConfig.clientSsid || '').length > 0;
             document.getElementById('forgetWifiBtn').style.display = hasSaved ? 'inline-flex' : 'none';
 
-            // AP status badge
             const apActive = appState.wifiConfig.apActive !== false;
             const badge = document.getElementById('apStatusBadge');
             badge.textContent = apActive ? 'ACTIVE' : 'DISABLED';
             badge.className = `ap-badge ${apActive ? 'ap-badge-active' : 'ap-badge-disabled'}`;
 
-            // Connecting status
             const statusDiv = document.getElementById('wifiConnectStatus');
             if (appState.wifiConfig.connecting) {
                 if (!wifiConnectStartAt) {
                     wifiConnectStartAt = Date.now();
                 }
-
                 const elapsedMs = Date.now() - wifiConnectStartAt;
                 statusDiv.style.display = 'block';
-
                 if (elapsedMs > WIFI_CONNECT_STALE_MS) {
                     document.getElementById('wifiConnectStatusText').textContent = 'Connection is taking longer than expected. You can retry.';
                     document.getElementById('connectWifiBtn').disabled = false;
                 } else {
-                    document.getElementById('wifiConnectStatusText').textContent = `Connecting to "${appState.wifiConfig.clientSsid || 'network'}"…`;
+                    document.getElementById('wifiConnectStatusText').textContent = `Connecting to "${appState.wifiConfig.clientSsid || 'network'}"...`;
                     document.getElementById('connectWifiBtn').disabled = true;
                 }
             } else {
@@ -766,21 +908,85 @@
             document.getElementById('contLoGood').value = appState.settings.continuityLoGood ?? DEFAULT_SETTINGS.continuityLoGood;
             document.getElementById('contHiGood').value = appState.settings.continuityHiGood ?? DEFAULT_SETTINGS.continuityHiGood;
             document.getElementById('contLoOpen').value = appState.settings.continuityLoOpen ?? DEFAULT_SETTINGS.continuityLoOpen;
-            document.getElementById('aux1Name').value = appState.auxNames[0] || DEFAULT_AUX_NAMES[0];
-            document.getElementById('aux2Name').value = appState.auxNames[1] || DEFAULT_AUX_NAMES[1];
+            if (!builderDirty) {
+                document.getElementById('aux1Name').value = appState.auxNames[0] || DEFAULT_AUX_NAMES[0];
+                document.getElementById('aux2Name').value = appState.auxNames[1] || DEFAULT_AUX_NAMES[1];
+            }
+
+            renderWifiScanResults();
         }
 
-        function renderArmStatus() {
-            document.getElementById('armStatus').textContent = appState.masterArmed ? 'ARMED' : 'DISARMED';
-            document.getElementById('masterArmToggle').checked = appState.masterArmed;
-            document.querySelector('.master-control').classList.toggle('armed', appState.masterArmed);
+        function readyPercent(zoneId, nowMs) {
+            const expiresAt = readyStateByZone.get(zoneId);
+            if (!expiresAt) {
+                return 0;
+            }
+            const remaining = expiresAt - nowMs;
+            if (remaining <= 0) {
+                return 0;
+            }
+            return Math.max(0, Math.min(100, (remaining / READY_WINDOW_MS) * 100));
+        }
+
+        function firingPercent(zoneId, nowMs) {
+            const endsAt = firingStateByZone.get(zoneId);
+            if (!endsAt) {
+                return 0;
+            }
+            const duration = Math.max(200, Math.round((appState.zones.find((zone) => zone.id === zoneId)?.time || 0) * 1000));
+            const remaining = endsAt - nowMs;
+            if (remaining <= 0) {
+                return 0;
+            }
+            return Math.max(0, Math.min(100, (remaining / duration) * 100));
+        }
+
+        function pruneInteractionState(nowMs = Date.now()) {
+            let changed = false;
+
+            readyStateByZone.forEach((expiresAt, zoneId) => {
+                if (expiresAt <= nowMs) {
+                    readyStateByZone.delete(zoneId);
+                    changed = true;
+                }
+            });
+
+            firingStateByZone.forEach((endsAt, zoneId) => {
+                if (endsAt <= nowMs) {
+                    firingStateByZone.delete(zoneId);
+                    changed = true;
+                }
+            });
+
+            readyStateByGroup.forEach((expiresAt, groupId) => {
+                if (expiresAt <= nowMs) {
+                    readyStateByGroup.delete(groupId);
+                    changed = true;
+                }
+            });
+
+            firingStateByGroup.forEach((endsAt, groupId) => {
+                if (endsAt <= nowMs) {
+                    firingStateByGroup.delete(groupId);
+                    changed = true;
+                }
+            });
+
+            return changed;
         }
 
         function renderBuilderZones() {
+            const groupOptions = ['<option value="0">None</option>']
+                .concat(Array.from({ length: MAX_GROUPS - 1 }, (_, idx) => {
+                    const groupId = idx + 1;
+                    return `<option value="${groupId}">Group ${groupId}</option>`;
+                }))
+                .join('');
+
             const zonesList = document.getElementById('zonesList');
             zonesList.innerHTML = appState.zones
                 .slice()
-                .sort((left, right) => left.id - right.id)
+                .sort((left, right) => left.order - right.order || left.id - right.id)
                 .map((zone) => `
                     <div class="zone-item" data-zone-id="${zone.id}">
                         <div class="zone-main">
@@ -796,7 +1002,7 @@
                                 </div>
                                 <div class="field-stack">
                                     <label>Group</label>
-                                    <input type="number" min="0" max="${MAX_GROUPS - 1}" data-field="group" value="${escapeHtml(zone.group)}">
+                                    <select data-field="group">${groupOptions.replace(`value="${zone.group}"`, `value="${zone.group}" selected`)}</select>
                                 </div>
                                 <div class="field-stack">
                                     <label>Order</label>
@@ -808,72 +1014,155 @@
                             </div>
                         </div>
                         <div class="zone-controls">
-                            <button class="btn btn-secondary" data-action="save-zone">Save</button>
+                            <button class="btn btn-secondary" data-action="zone-up">↑</button>
+                            <button class="btn btn-secondary" data-action="zone-down">↓</button>
                         </div>
                     </div>
                 `)
                 .join('');
         }
 
-        function renderGroups() {
-            const groupsList = document.getElementById('groupsList');
-            groupsList.innerHTML = appState.groups.length === 0
-                ? '<div class="group-item"><div class="group-main"><div class="group-title">No groups saved yet</div><p class="muted">Add a group to start organizing zones.</p></div></div>'
-                : appState.groups.map((group) => `
-                    <div class="group-item" data-group-id="${group.id}">
-                        <div class="group-main">
-                            <div class="group-title">Group ${group.id}</div>
-                            <div class="group-meta">
-                                <div class="field-stack">
-                                    <label>Name</label>
-                                    <input type="text" data-field="name" value="${escapeHtml(group.name)}">
-                                </div>
-                                <div class="field-stack">
-                                    <label>Order</label>
-                                    <input type="number" min="0" data-field="order" value="${escapeHtml(group.order)}">
-                                </div>
+        function renderShowZones() {
+            const now = Date.now();
+            const showZoneGrid = document.getElementById('showZoneGrid');
+            const sortedZones = appState.zones
+                .slice()
+                .sort((left, right) => left.order - right.order || left.id - right.id);
+
+            const singles = [];
+            const grouped = new Map();
+            sortedZones.forEach((zone) => {
+                if (zone.group > 0) {
+                    if (!grouped.has(zone.group)) {
+                        grouped.set(zone.group, []);
+                    }
+                    grouped.get(zone.group).push(zone);
+                } else {
+                    singles.push(zone);
+                }
+            });
+
+            const singleCards = singles.map((zone) => {
+                const continuityClass = CONTINUITY_CLASSES[zone.continuity] || 'unknown';
+                const continuityLabel = CONTINUITY_LABELS[zone.continuity] || 'Unknown';
+                const readyPct = readyPercent(zone.id, now);
+                const firingPct = firingPercent(zone.id, now);
+                const canControl = appState.role === 'controller' && appState.masterArmed && zone.enabled && !appState.estopActive;
+                const isReady = readyPct > 0;
+                const isRunning = firingPct > 0;
+                const buttonLabel = !zone.enabled
+                    ? 'Disabled'
+                    : !appState.masterArmed
+                        ? 'Arm Required'
+                        : appState.estopActive
+                            ? 'E-Stop Active'
+                            : isRunning
+                                ? '<span class="icon-fire">🔥</span> Running'
+                                : isReady
+                                    ? '<span class="icon-fire">🔥</span> Fire'
+                                    : '<span class="icon-lock">🔒</span> Ready';
+                const buttonClass = isRunning ? 'running' : isReady ? 'fire' : 'ready';
+
+                return `
+                    <div class="zone-card" data-show-zone-id="${zone.id}">
+                        <div class="zone-card-header">
+                            <div>
+                                <div class="zone-number">Zone ${zone.id + 1}</div>
+                                <div class="zone-desc">${escapeHtml(zone.description || 'No description')}</div>
                             </div>
-                            <div class="field-stack">
-                                <label>Members (comma separated zone numbers)</label>
-                                <textarea class="group-members" data-field="members" placeholder="1,2,3">${escapeHtml(group.members)}</textarea>
-                            </div>
+                            <div class="continuity-dot ${continuityClass}" title="${continuityLabel}"></div>
                         </div>
-                        <div class="group-controls">
-                            <button class="btn btn-secondary" data-action="save-group">Save</button>
+                        <div class="muted">Order ${zone.order} · ${zone.time.toFixed(1)}s</div>
+                        <button class="zone-fire-button ${buttonClass}" data-action="fire-zone" data-zone-id="${zone.id}" ${canControl ? '' : 'disabled'}>${buttonLabel}</button>
+                        <div class="zone-progress-wrap">
+                            <div class="zone-progress ready-progress" style="width:${readyPct.toFixed(2)}%;"></div>
+                            <div class="zone-progress firing-progress" style="width:${firingPct.toFixed(2)}%;"></div>
                         </div>
                     </div>
-                `).join('');
-        }
+                `;
+            });
 
-        function renderShowZones() {
-            const showZoneGrid = document.getElementById('showZoneGrid');
-            showZoneGrid.innerHTML = appState.zones
-                .slice()
-                .sort((left, right) => left.order - right.order || left.id - right.id)
-                .map((zone) => {
-                    const continuityClass = CONTINUITY_CLASSES[zone.continuity] || 'unknown';
-                    const continuityLabel = CONTINUITY_LABELS[zone.continuity] || 'Unknown';
-                    const canFire = appState.role === 'controller' && appState.masterArmed && zone.enabled;
-                    const buttonLabel = !zone.enabled
+            const groupCards = Array.from(grouped.entries())
+                .sort((left, right) => left[0] - right[0])
+                .map(([groupId, zones]) => {
+                    const zoneIds = zones.map((zone) => zone.id);
+                    const zoneLabel = zones.map((zone) => `${zone.id + 1}`).join(', ');
+                    const maxDuration = zones.reduce((maxValue, zone) => Math.max(maxValue, Number(zone.time || 0)), 0);
+                    const readyPct = (() => {
+                        const expiresAt = readyStateByGroup.get(groupId);
+                        if (!expiresAt) return 0;
+                        const remaining = expiresAt - now;
+                        if (remaining <= 0) {
+                            readyStateByGroup.delete(groupId);
+                            return 0;
+                        }
+                        return Math.max(0, Math.min(100, (remaining / READY_WINDOW_MS) * 100));
+                    })();
+                    const firingPct = (() => {
+                        const endsAt = firingStateByGroup.get(groupId);
+                        if (!endsAt) return 0;
+                        const duration = Math.max(200, Math.round(maxDuration * 1000));
+                        const remaining = endsAt - now;
+                        if (remaining <= 0) {
+                            firingStateByGroup.delete(groupId);
+                            return 0;
+                        }
+                        return Math.max(0, Math.min(100, (remaining / duration) * 100));
+                    })();
+                    const allEnabled = zones.every((zone) => zone.enabled);
+                    const canControl = appState.role === 'controller' && appState.masterArmed && allEnabled && !appState.estopActive;
+                    const isReady = readyPct > 0;
+                    const isRunning = firingPct > 0;
+                    const buttonLabel = !allEnabled
                         ? 'Disabled'
-                        : appState.masterArmed
-                            ? 'Fire'
-                            : 'Arm Required';
+                        : !appState.masterArmed
+                            ? 'Arm Required'
+                            : appState.estopActive
+                                ? 'E-Stop Active'
+                                : isRunning
+                                    ? '<span class="icon-fire">🔥</span> Running'
+                                    : isReady
+                                        ? '<span class="icon-fire">🔥</span> Fire Group'
+                                        : '<span class="icon-lock">🔒</span> Ready Group';
+                    const buttonClass = isRunning ? 'running' : isReady ? 'fire' : 'ready';
+
                     return `
-                        <div class="zone-card" data-show-zone-id="${zone.id}">
+                        <div class="zone-card group-card" data-show-group-id="${groupId}">
                             <div class="zone-card-header">
                                 <div>
-                                    <div class="zone-number">Zone ${zone.id + 1}</div>
-                                    <div class="zone-desc">${escapeHtml(zone.description || 'No description')}</div>
+                                    <div class="zone-number">Group ${groupId}</div>
+                                    <div class="zone-desc">Zones ${zoneLabel}</div>
                                 </div>
-                                <div class="continuity-dot ${continuityClass}" title="${continuityLabel}"></div>
+                                <div class="continuity-dot good" title="Grouped"></div>
                             </div>
-                            <div class="muted">Order ${zone.order} · Group ${zone.group}</div>
-                            <button class="zone-fire-button ${canFire ? 'fire' : ''}" data-action="fire-zone" data-zone-id="${zone.id}" ${canFire ? '' : 'disabled'}>${buttonLabel}</button>
+                            <div class="muted">Duration ${maxDuration.toFixed(1)}s · ${zoneIds.length} zone(s)</div>
+                            <button class="zone-fire-button ${buttonClass}" data-action="fire-group" data-group-id="${groupId}" ${canControl ? '' : 'disabled'}>${buttonLabel}</button>
+                            <div class="zone-progress-wrap">
+                                <div class="zone-progress ready-progress" style="width:${readyPct.toFixed(2)}%;"></div>
+                                <div class="zone-progress firing-progress" style="width:${firingPct.toFixed(2)}%;"></div>
+                            </div>
                         </div>
                     `;
-                })
-                .join('');
+                });
+
+            showZoneGrid.innerHTML = groupCards.concat(singleCards).join('');
+        }
+
+        function renderWifiScanResults() {
+            const container = document.getElementById('wifiScanResults');
+            if (!appState.wifiScanResults.length) {
+                container.style.display = 'none';
+                container.innerHTML = '';
+                return;
+            }
+
+            container.style.display = 'block';
+            container.innerHTML = appState.wifiScanResults.map((network) => `
+                <button type="button" class="wifi-network-row" data-ssid="${escapeHtml(network.ssid || '')}">
+                    <span>${escapeHtml(network.ssid || '(hidden)')}</span>
+                    <span>${Number(network.rssi ?? 0)} dBm ${network.secure ? '🔒' : '🔓'}</span>
+                </button>
+            `).join('');
         }
 
         function syncShowMode() {
@@ -882,9 +1171,142 @@
             autoPanel.style.display = selectedMode === 'auto' ? 'block' : 'none';
         }
 
+        function updateBuilderDirtyBadge() {
+            const badge = document.getElementById('builderDirtyBadge');
+            badge.style.display = builderDirty ? 'inline-flex' : 'none';
+        }
+
+        function markBuilderDirty() {
+            if (!builderDirty) {
+                builderDirty = true;
+                updateBuilderDirtyBadge();
+            }
+        }
+
+        function clearBuilderDirty() {
+            builderDirty = false;
+            updateBuilderDirtyBadge();
+        }
+
+        function refreshBuilderSavedSnapshot() {
+            builderSavedSnapshot = {
+                zones: appState.zones.map((zone) => ({ ...zone })),
+                auxNames: [...appState.auxNames]
+            };
+        }
+
+        function requireControllerAction(actionLabel) {
+            if (appState.role === 'controller') {
+                return true;
+            }
+            showToast(`Only the controller can ${actionLabel}`, 'error');
+            return false;
+        }
+
+        function captureBuilderDraftToState() {
+            const zoneItems = Array.from(document.querySelectorAll('#zonesList [data-zone-id]'));
+            if (zoneItems.length > 0) {
+                appState.zones = appState.zones.map((zone) => {
+                    const item = zoneItems.find((candidate) => Number(candidate.dataset.zoneId || 0) === zone.id);
+                    if (!item) {
+                        return zone;
+                    }
+                    return {
+                        ...zone,
+                        description: item.querySelector('[data-field="description"]').value,
+                        time: Number(item.querySelector('[data-field="time"]').value || 0),
+                        group: Number(item.querySelector('[data-field="group"]').value || 0),
+                        order: Number(item.querySelector('[data-field="order"]').value || zone.order),
+                        enabled: item.querySelector('[data-field="enabled"]').checked
+                    };
+                });
+            }
+
+            const aux1 = document.getElementById('aux1Name');
+            const aux2 = document.getElementById('aux2Name');
+            if (aux1 && aux2) {
+                appState.auxNames = [aux1.value, aux2.value];
+            }
+        }
+
+        function shouldWarnUnsavedBuilderChanges(nextPage) {
+            return builderDirty && appState.page === 'builder' && nextPage !== 'builder';
+        }
+
+        function saveBuilderChanges() {
+            if (!requireControllerAction('save builder changes')) {
+                return;
+            }
+
+            const previousZones = builderSavedSnapshot.zones.map((zone) => ({ ...zone }));
+            const previousAuxNames = [...builderSavedSnapshot.auxNames];
+            captureBuilderDraftToState();
+
+            let failed = false;
+            appState.zones.forEach((zone) => {
+                const previous = previousZones.find((candidate) => candidate.id === zone.id);
+                if (previous &&
+                    previous.description === zone.description &&
+                    Number(previous.time || 0) === Number(zone.time || 0) &&
+                    Boolean(previous.enabled) === Boolean(zone.enabled) &&
+                    Number(previous.group || 0) === Number(zone.group || 0) &&
+                    Number(previous.order || 0) === Number(zone.order || 0)) {
+                    return;
+                }
+
+                const ok = wsSend({
+                    type: 'set_zone',
+                    zone: zone.id,
+                    desc: zone.description || '',
+                    time: Number(zone.time || 0),
+                    enabled: Boolean(zone.enabled),
+                    group: Number(zone.group || 0),
+                    order: Number(zone.order || 0)
+                });
+                if (!ok) {
+                    failed = true;
+                }
+            });
+
+            const nextAuxNames = [
+                document.getElementById('aux1Name').value.trim(),
+                document.getElementById('aux2Name').value.trim()
+            ];
+            if ((previousAuxNames[0] || '') !== nextAuxNames[0]) {
+                const aux1Ok = wsSend({ type: 'set_aux_name', relay: 0, name: nextAuxNames[0] });
+                if (!aux1Ok) {
+                    failed = true;
+                }
+            }
+            if ((previousAuxNames[1] || '') !== nextAuxNames[1]) {
+                const aux2Ok = wsSend({ type: 'set_aux_name', relay: 1, name: nextAuxNames[1] });
+                if (!aux2Ok) {
+                    failed = true;
+                }
+            }
+
+            if (failed) {
+                showToast('Some builder updates could not be sent', 'error');
+                return;
+            }
+
+            wsSend({ type: 'get_state' });
+
+            refreshBuilderSavedSnapshot();
+            clearBuilderDirty();
+            showToast('Builder changes saved', 'success');
+        }
+
         function showPage(pageId, options = {}) {
             const { pushHistory = true } = options;
-            appState.page = PAGE_PATHS[pageId] ? pageId : 'splash';
+            const nextPage = PAGE_PATHS[pageId] ? pageId : 'splash';
+            if (shouldWarnUnsavedBuilderChanges(nextPage)) {
+                const confirmed = window.confirm('You have unsaved Builder changes. Leave without saving?');
+                if (!confirmed) {
+                    return;
+                }
+            }
+            appState.page = nextPage;
 
             document.querySelectorAll('.page').forEach((page) => page.classList.remove('active'));
             document.querySelectorAll('.nav-tab').forEach((tab) => tab.classList.remove('active'));
@@ -898,79 +1320,72 @@
                     window.history.pushState({ page: appState.page }, '', targetPath);
                 }
             }
+
+            if (appState.page === 'show') {
+                renderShowZones();
+                renderShowStatePanel();
+            } else if (appState.page === 'builder') {
+                renderBuilderZones();
+                updateBuilderDirtyBadge();
+            } else if (appState.page === 'settings') {
+                hydrateSettingsForm();
+            }
         }
 
-        function saveZone(item) {
-            const zoneId = Number(item.dataset.zoneId);
-            wsSend({
-                type: 'set_zone',
-                zone: zoneId,
-                desc: item.querySelector('[data-field="description"]').value.trim(),
-                time: Number(item.querySelector('[data-field="time"]').value || 0),
-                enabled: item.querySelector('[data-field="enabled"]').checked,
-                group: Number(item.querySelector('[data-field="group"]').value || 0),
-                order: Number(item.querySelector('[data-field="order"]').value || zoneId)
-            });
-        }
-
-        function saveGroup(item) {
-            const groupId = Number(item.dataset.groupId);
-            wsSend({
-                type: 'set_group',
-                id: groupId,
-                name: item.querySelector('[data-field="name"]').value.trim(),
-                members: item.querySelector('[data-field="members"]').value.trim(),
-                order: Number(item.querySelector('[data-field="order"]').value || groupId)
-            });
-        }
-
-        function addGroup() {
-            if (appState.groups.length >= MAX_GROUPS) {
-                showToast('Maximum group count reached', 'error');
+        function reorderZone(zoneId, direction) {
+            captureBuilderDraftToState();
+            const zoneItems = appState.zones
+                .slice()
+                .sort((left, right) => left.order - right.order || left.id - right.id);
+            const currentIndex = zoneItems.findIndex((item) => item.id === zoneId);
+            const swapIndex = currentIndex + direction;
+            if (currentIndex < 0 || swapIndex < 0 || swapIndex >= zoneItems.length) {
                 return;
             }
 
-            const usedIds = new Set(appState.groups.map((group) => group.id));
-            let nextId = 0;
-            while (usedIds.has(nextId) && nextId < MAX_GROUPS) {
-                nextId += 1;
-            }
+            const tempOrder = zoneItems[currentIndex].order;
+            zoneItems[currentIndex].order = zoneItems[swapIndex].order;
+            zoneItems[swapIndex].order = tempOrder;
 
-            if (nextId >= MAX_GROUPS) {
-                showToast('Maximum group count reached', 'error');
-                return;
-            }
+            appState.zones = appState.zones.map((zone) => {
+                const updated = zoneItems.find((item) => item.id === zone.id);
+                return updated ? { ...zone, order: updated.order } : zone;
+            });
 
-            const newGroup = {
-                id: nextId,
-                name: `Group ${nextId}`,
-                members: '',
-                order: nextId
-            };
-
-            appState.groups = [...appState.groups, newGroup].sort((left, right) => left.order - right.order || left.id - right.id);
-            renderGroups();
-            wsSend({ type: 'set_group', ...newGroup });
+            markBuilderDirty();
+            renderBuilderZones();
         }
 
         function saveApCredentials() {
+            if (!requireControllerAction('save AP settings')) {
+                return;
+            }
+
             wsSend({
                 type: 'set_ap_credentials',
                 ssid: document.getElementById('apSsid').value.trim(),
                 pass: document.getElementById('apPassword').value.trim()
             });
+            showToast('AP settings saved', 'success');
         }
 
         function forgetNetwork() {
+            if (!requireControllerAction('forget WiFi credentials')) {
+                return;
+            }
+
             showConfirm(
                 'Forget Network',
                 `Remove credentials for "${appState.wifiConfig.clientSsid || 'saved network'}" and re-enable the hosted access point?`,
-                () => wsSend({ type: 'wifi_forget' }),
-                null
+                () => wsSend({ type: 'wifi_forget' })
             );
         }
 
         function connectToExternalNetwork() {
+            if (!requireControllerAction('connect WiFi')) {
+                return;
+            }
+
             const ssid = document.getElementById('extSsid').value.trim();
             const pass = document.getElementById('extPassword').value;
             if (!ssid) {
@@ -978,20 +1393,29 @@
                 return;
             }
             wifiConnectStartAt = Date.now();
-            document.getElementById('wifiConnectStatusText').textContent = `Connecting to "${ssid}"…`;
+            document.getElementById('wifiConnectStatusText').textContent = `Connecting to "${ssid}"...`;
             document.getElementById('wifiConnectStatus').style.display = 'block';
             document.getElementById('connectWifiBtn').disabled = true;
             wsSend({ type: 'wifi_connect', ssid, pass });
         }
 
         function saveIgniterSettings() {
+            if (!requireControllerAction('save igniter settings')) {
+                return;
+            }
+
             const seconds = Number(document.getElementById('igniterDuration').value || 0);
             const autoDelay = Number(document.getElementById('autoDelay').value || 0);
             wsSend({ type: 'set_setting', key: 'ign_dur', value: Math.round(seconds * 1000) });
             wsSend({ type: 'set_setting', key: 'auto_delay', value: autoDelay });
+            showToast('Igniter configuration saved', 'success');
         }
 
         function saveSafetySettings() {
+            if (!requireControllerAction('save safety settings')) {
+                return;
+            }
+
             wsSend({
                 type: 'set_setting',
                 key: 'abort_disc',
@@ -1005,12 +1429,21 @@
         }
 
         function saveContinuityThresholds() {
+            if (!requireControllerAction('save continuity thresholds')) {
+                return;
+            }
+
             wsSend({ type: 'set_setting', key: 'cont_lo_good', value: Number(document.getElementById('contLoGood').value || 0) });
             wsSend({ type: 'set_setting', key: 'cont_hi_good', value: Number(document.getElementById('contHiGood').value || 0) });
             wsSend({ type: 'set_setting', key: 'cont_lo_open', value: Number(document.getElementById('contLoOpen').value || 0) });
+            showToast('Continuity thresholds updated', 'success');
         }
 
         function saveAuxName(relay) {
+            if (!requireControllerAction('rename auxiliary relays')) {
+                return;
+            }
+
             const elementId = relay === 0 ? 'aux1Name' : 'aux2Name';
             wsSend({
                 type: 'set_aux_name',
@@ -1019,13 +1452,191 @@
             });
         }
 
+        function toggleAuxRelay(relayIndex) {
+            if (!requireControllerAction('toggle auxiliary relays')) {
+                return;
+            }
+            const nextState = !appState.auxState[relayIndex];
+            wsSend({ type: 'aux', relay: relayIndex, state: nextState });
+        }
+
         function startRelayTest() {
+            if (!requireControllerAction('run relay test')) {
+                return;
+            }
+
             if (wsSend({ type: 'relay_test' })) {
                 appState.relayTestRunning = true;
                 document.getElementById('testModal').style.display = 'flex';
                 document.getElementById('testProgress').textContent = 'Starting relay test...';
                 document.getElementById('testProgressBar').value = 0;
             }
+        }
+
+        function clearAllShowData() {
+            if (!requireControllerAction('clear show data')) {
+                return;
+            }
+
+            showConfirm(
+                'Clear All',
+                'This clears all zone descriptions, times, groups, and order assignments. Continue?',
+                () => {
+                    if (wsSend({ type: 'clear_all' })) {
+                        clearBuilderDirty();
+                        readyStateByZone.clear();
+                        firingStateByZone.clear();
+                        readyStateByGroup.clear();
+                        firingStateByGroup.clear();
+                    }
+                }
+            );
+        }
+
+        function exportShowData() {
+            if (!requireControllerAction('export show data')) {
+                return;
+            }
+            wsSend({ type: 'export_show' });
+        }
+
+        function importShowData() {
+            if (!requireControllerAction('import show data')) {
+                return;
+            }
+
+            const file = document.getElementById('importFile').files[0];
+            if (!file) {
+                showToast('Select a JSON file first', 'error');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = () => {
+                try {
+                    const parsed = JSON.parse(String(reader.result || '{}'));
+                    wsSend({ type: 'import_show', data: parsed });
+                    showToast('Import sent', 'success');
+                } catch (error) {
+                    showToast('Invalid JSON file', 'error');
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function scanNetworks() {
+            if (!requireControllerAction('scan WiFi networks')) {
+                return;
+            }
+
+            appState.wifiScanResults = [];
+            renderWifiScanResults();
+            wsSend({ type: 'wifi_scan' });
+        }
+
+        function toggleRoleLock() {
+            if (!requireControllerAction('change role lock')) {
+                return;
+            }
+            wsSend({ type: 'set_role_lock', locked: !(appState.roleLocked !== false) });
+        }
+
+        function armSystem(shouldArm, event) {
+            if (!requireControllerAction('arm/disarm the system')) {
+                event.target.checked = appState.masterArmed;
+                return;
+            }
+
+            if (shouldArm && appState.estopActive) {
+                showToast('Reset E-Stop before arming', 'error');
+                event.target.checked = false;
+                return;
+            }
+
+            showConfirm(
+                shouldArm ? 'Arm System' : 'Disarm System',
+                shouldArm ? 'Arming enables igniter power relay. Continue?' : 'Disarming will disable firing.',
+                () => wsSend({ type: 'arm', state: shouldArm }),
+                () => { event.target.checked = !shouldArm; }
+            );
+        }
+
+        function startAutoShow() {
+            if (!requireControllerAction('start auto show')) {
+                return;
+            }
+
+            if (appState.estopActive) {
+                showToast('Reset E-Stop before starting auto mode', 'error');
+                return;
+            }
+
+            const enabledZones = appState.zones.filter((zone) => zone.enabled);
+            const invalidZones = enabledZones.filter((zone) => zone.time <= 0);
+            if (invalidZones.length > 0) {
+                showToast('All enabled zones must have a time set for auto mode', 'error');
+                return;
+            }
+
+            const totalDuration = enabledZones.reduce((acc, zone) => acc + zone.time, 0);
+            showConfirm(
+                'Start Auto Show',
+                `Enabled zones: ${enabledZones.length}. Approx duration: ${totalDuration.toFixed(1)} sec. Continue?`,
+                () => wsSend({ type: 'auto_start', zone: 0 })
+            );
+        }
+
+        function fireZone(zoneId) {
+            if (appState.role !== 'controller' || !appState.masterArmed || appState.estopActive) {
+                return;
+            }
+
+            const now = Date.now();
+            const readyUntil = readyStateByZone.get(zoneId) || 0;
+            const runningUntil = firingStateByZone.get(zoneId) || 0;
+            const isReady = readyUntil > now;
+            const isRunning = runningUntil > now;
+
+            if (!isReady && !isRunning) {
+                readyStateByZone.set(zoneId, now + READY_WINDOW_MS);
+                renderShowZones();
+                return;
+            }
+
+            if (wsSend({ type: 'fire', zone: zoneId })) {
+                readyStateByZone.delete(zoneId);
+                const durationMs = Math.max(200, Number(appState.settings.igniterDurationMs || 1000));
+                firingStateByZone.set(zoneId, Date.now() + durationMs);
+            }
+            renderShowZones();
+        }
+
+        function fireGroup(groupId) {
+            if (appState.role !== 'controller' || !appState.masterArmed || appState.estopActive) {
+                return;
+            }
+
+            const now = Date.now();
+            const readyUntil = readyStateByGroup.get(groupId) || 0;
+            const runningUntil = firingStateByGroup.get(groupId) || 0;
+            const isReady = readyUntil > now;
+            const isRunning = runningUntil > now;
+
+            if (!isReady && !isRunning) {
+                readyStateByGroup.set(groupId, now + READY_WINDOW_MS);
+                renderShowZones();
+                return;
+            }
+
+            if (wsSend({ type: 'fire_group', group: groupId })) {
+                readyStateByGroup.delete(groupId);
+                const durationMs = Math.max(200, Number(appState.settings.igniterDurationMs || 1000));
+                firingStateByGroup.set(groupId, Date.now() + durationMs);
+                appState.zones
+                    .filter((zone) => zone.group === groupId)
+                    .forEach((zone) => firingStateByZone.set(zone.id, Date.now() + durationMs));
+            }
+            renderShowZones();
         }
 
         function bindStaticEvents() {
@@ -1039,83 +1650,111 @@
                 showPage(normalizePageId(window.location.pathname), { pushHistory: false });
             });
 
-            document.getElementById('masterArmToggle').addEventListener('change', (event) => {
-                const shouldArm = event.target.checked;
-                showConfirm(
-                    shouldArm ? 'Arm System' : 'Disarm System',
-                    shouldArm ? 'Arming will enable the igniter power relay. Continue?' : 'Disarming will disable firing.',
-                    () => wsSend({ type: 'arm', state: shouldArm }),
-                    () => {
-                        event.target.checked = !shouldArm;
-                    }
-                );
+            window.addEventListener('beforeunload', (event) => {
+                if (!builderDirty) {
+                    return;
+                }
+                event.preventDefault();
+                event.returnValue = '';
             });
 
-            document.getElementById('eStopBtn').addEventListener('click', () => {
-                wsSend({ type: 'estop' });
-            });
+            document.getElementById('masterArmToggle').addEventListener('change', (event) => armSystem(event.target.checked, event));
+            document.getElementById('eStopBtn').addEventListener('click', () => wsSend({ type: 'estop' }));
+            document.getElementById('eStopResetBtn').addEventListener('click', () => wsSend({ type: 'estop_reset' }));
             document.getElementById('roleBadge').addEventListener('click', toggleRoleLock);
 
             document.getElementById('saveApBtn').addEventListener('click', saveApCredentials);
+            document.getElementById('scanWifiBtn').addEventListener('click', scanNetworks);
             document.getElementById('connectWifiBtn').addEventListener('click', connectToExternalNetwork);
             document.getElementById('forgetWifiBtn').addEventListener('click', forgetNetwork);
-            document.getElementById('igniterDuration').addEventListener('change', saveIgniterSettings);
-            document.getElementById('autoDelay').addEventListener('change', saveIgniterSettings);
+
+            document.getElementById('saveIgniterBtn').addEventListener('click', saveIgniterSettings);
             document.getElementById('abortOnDisconnect').addEventListener('change', saveSafetySettings);
             document.getElementById('eStopResetMode').addEventListener('change', saveSafetySettings);
             document.getElementById('calibrateBtn').addEventListener('click', saveContinuityThresholds);
-            document.getElementById('aux1Name').addEventListener('change', () => saveAuxName(0));
-            document.getElementById('aux2Name').addEventListener('change', () => saveAuxName(1));
             document.getElementById('relayTestBtn').addEventListener('click', startRelayTest);
-            document.getElementById('testStopBtn').addEventListener('click', () => {
-                wsSend({ type: 'estop' });
-            });
-            document.getElementById('addGroupBtn').addEventListener('click', addGroup);
-            document.getElementById('autoStartBtn').addEventListener('click', () => wsSend({ type: 'auto_start', zone: 0 }));
+            document.getElementById('testStopBtn').addEventListener('click', () => wsSend({ type: 'estop' }));
+            document.getElementById('saveBuilderBtn').addEventListener('click', saveBuilderChanges);
+            document.getElementById('clearAllBtn').addEventListener('click', clearAllShowData);
+            document.getElementById('exportBtn').addEventListener('click', exportShowData);
+            document.getElementById('importBtn').addEventListener('click', importShowData);
+            document.getElementById('autoStartBtn').addEventListener('click', startAutoShow);
             document.getElementById('autoStopBtn').addEventListener('click', () => wsSend({ type: 'auto_stop' }));
+
+            document.getElementById('auxToggle0').addEventListener('click', () => toggleAuxRelay(0));
+            document.getElementById('auxToggle1').addEventListener('click', () => toggleAuxRelay(1));
+
             document.querySelectorAll('input[name="showMode"]').forEach((radio) => {
                 radio.addEventListener('change', syncShowMode);
             });
 
+            document.getElementById('wifiScanResults').addEventListener('click', (event) => {
+                const row = event.target.closest('[data-ssid]');
+                if (!row) {
+                    return;
+                }
+                const ssid = row.dataset.ssid || '';
+                document.getElementById('extSsid').value = ssid;
+            });
+
             document.getElementById('zonesList').addEventListener('click', (event) => {
-                const action = event.target.dataset.action;
-                if (action !== 'save-zone') {
+                const item = event.target.closest('[data-zone-id]');
+                if (!item) {
                     return;
                 }
 
-                const item = event.target.closest('[data-zone-id]');
-                if (item) {
-                    saveZone(item);
+                const action = event.target.dataset.action;
+                const zoneId = Number(item.dataset.zoneId);
+                if (action === 'zone-up') {
+                    reorderZone(zoneId, -1);
+                } else if (action === 'zone-down') {
+                    reorderZone(zoneId, 1);
                 }
             });
 
-            document.getElementById('groupsList').addEventListener('click', (event) => {
-                const action = event.target.dataset.action;
-                if (action !== 'save-group') {
-                    return;
-                }
+            document.getElementById('zonesList').addEventListener('input', () => {
+                captureBuilderDraftToState();
+                markBuilderDirty();
+            });
 
-                const item = event.target.closest('[data-group-id]');
-                if (item) {
-                    saveGroup(item);
-                }
+            document.getElementById('zonesList').addEventListener('change', () => {
+                captureBuilderDraftToState();
+                markBuilderDirty();
+            });
+
+            document.getElementById('aux1Name').addEventListener('input', () => {
+                captureBuilderDraftToState();
+                markBuilderDirty();
+            });
+            document.getElementById('aux2Name').addEventListener('input', () => {
+                captureBuilderDraftToState();
+                markBuilderDirty();
             });
 
             document.getElementById('showZoneGrid').addEventListener('click', (event) => {
+                const groupButton = event.target.closest('[data-action="fire-group"]');
+                if (groupButton) {
+                    fireGroup(Number(groupButton.dataset.groupId));
+                    return;
+                }
+
                 const button = event.target.closest('[data-action="fire-zone"]');
                 if (!button) {
                     return;
                 }
-
-                wsSend({ type: 'fire', zone: Number(button.dataset.zoneId) });
+                fireZone(Number(button.dataset.zoneId));
             });
         }
 
-        // Confirmation Modal
         function showConfirm(title, body, onOk, onCancel) {
             document.getElementById('confirmTitle').textContent = title;
             document.getElementById('confirmBody').textContent = body;
-            document.getElementById('confirmModal').style.display = 'flex';
+            const modal = document.getElementById('confirmModal');
+            modal.style.display = 'flex';
+            modal.style.position = 'fixed';
+            modal.style.inset = '0';
+            modal.style.alignItems = 'center';
+            modal.style.justifyContent = 'center';
 
             const okBtn = document.getElementById('confirmOk');
             const cancelBtn = document.getElementById('confirmCancel');
@@ -1131,16 +1770,25 @@
                 document.getElementById('confirmModal').style.display = 'none';
                 okBtn.removeEventListener('click', handleOk);
                 cancelBtn.removeEventListener('click', handleCancel);
-                if (onCancel) onCancel();
+                if (onCancel) {
+                    onCancel();
+                }
             };
 
             okBtn.addEventListener('click', handleOk);
             cancelBtn.addEventListener('click', handleCancel);
         }
 
-        // Toast Notifications
         function showToast(message, type = 'info') {
-            console.log(`[${type}] ${message}`);
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            toast.textContent = message;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.classList.add('toast-hide');
+                setTimeout(() => toast.remove(), 200);
+            }, 2600);
         }
 
         const taglines = [
@@ -1168,13 +1816,27 @@
             taglineEl.textContent = taglines[taglineIndex];
         }, 4000);
 
-        // Initialize
-        window.addEventListener('DOMContentLoaded', () => {
+        setInterval(() => {
+            if (readyStateByZone.size === 0 && firingStateByZone.size === 0 && readyStateByGroup.size === 0 && firingStateByGroup.size === 0) {
+                return;
+            }
+            if (pruneInteractionState(Date.now())) {
+                renderShowZones();
+            }
+        }, 120);
+
+        function initializeApp() {
             bindStaticEvents();
             showPage(normalizePageId(window.location.pathname), { pushHistory: false });
             renderApp();
             connectWebSocket();
-        });
+        }
+
+        if (document.readyState === 'loading') {
+            window.addEventListener('DOMContentLoaded', initializeApp);
+        } else {
+            initializeApp();
+        }
     </script>
 </body>
 
