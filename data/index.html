@@ -18,19 +18,19 @@
             </div>
         </div>
         <nav class="nav-tabs">
-            <button class="nav-tab active" data-page="splash">Splash</button>
+            <button class="nav-tab active" data-page="splash">Status</button>
             <button class="nav-tab" data-page="builder">Builder</button>
             <button class="nav-tab" data-page="show">Show</button>
             <button class="nav-tab" data-page="settings">Settings</button>
         </nav>
         <div class="nav-right">
             <div class="status-group">
+                <div class="connection-indicator disconnected" id="connectionDot" title="Controller disconnected"></div>
                 <button class="role-badge role-viewer is-locked" id="roleBadge" type="button"
                     aria-label="Controller role lock" title="Controller role lock">
                     <img id="roleLockIcon" class="role-lock-icon" src="lock.svg" alt="Locked" />
                     <span id="roleBadgeText">—</span>
                 </button>
-                <div class="connection-indicator" id="connectionDot"></div>
             </div>
             <button class="btn-estop" id="eStopBtn" title="Emergency Stop">E-STOP</button>
             <button class="btn btn-secondary btn-reset" id="eStopResetBtn" title="Reset latched E-Stop">Reset</button>
@@ -40,7 +40,7 @@
     <!-- Main Content -->
     <main class="container">
 
-        <!-- Page: Splash -->
+        <!-- Page: Status -->
         <section id="splash" class="page active">
             <div class="splash-content">
                 <img src="apexpyro-logo.webp" alt="ApexPyro" class="splash-logo">
@@ -59,6 +59,32 @@
                         <span id="wifiLevel">—</span>
                     </div>
                 </div>
+                <div class="status-overview-grid">
+                    <div class="status-overview-item">
+                        <span class="status-overview-label">Master Arm</span>
+                        <span id="statusMasterArm" class="status-badge status-badge-safe">DISARMED</span>
+                    </div>
+                    <div class="status-overview-item">
+                        <span class="status-overview-label">E-Stop</span>
+                        <span id="statusEStop" class="status-badge status-badge-safe">INACTIVE</span>
+                    </div>
+                    <div class="status-overview-item">
+                        <span class="status-overview-label">AP/STA Mode</span>
+                        <span id="statusApMode" class="status-overview-value">AP Active</span>
+                    </div>
+                    <div class="status-overview-item">
+                        <span class="status-overview-label">Show State</span>
+                        <span id="statusShowState" class="status-overview-value">Idle</span>
+                    </div>
+                    <div class="status-overview-item">
+                        <span class="status-overview-label">Igniter Duration</span>
+                        <span id="statusIgniterDuration" class="status-overview-value">2.0s</span>
+                    </div>
+                    <div class="status-overview-item">
+                        <span class="status-overview-label">Enabled Groups / Zones</span>
+                        <span id="statusEnabledCounts" class="status-overview-value">0 groups / 0 zones</span>
+                    </div>
+                </div>
             </div>
         </section>
 
@@ -67,7 +93,13 @@
             <h2>Show Builder</h2>
             <div class="builder-content">
                 <div class="zones-section">
-                    <h3>Zones</h3>
+                    <div class="zones-header">
+                        <h3>Zones</h3>
+                        <div class="builder-bulk-actions">
+                            <button id="enableAllBtn" class="btn btn-secondary" type="button">Enable All</button>
+                            <button id="disableAllBtn" class="btn btn-secondary" type="button">Disable All</button>
+                        </div>
+                    </div>
                     <div id="zonesList" class="zones-list"></div>
                 </div>
                 <div class="builder-footer">
@@ -82,11 +114,13 @@
                             <input type="text" id="aux2Name" placeholder="Music">
                         </div>
                     </details>
-                    <div class="builder-actions">
-                        <span id="builderDirtyBadge" class="builder-dirty-badge" style="display: none;">Unsaved
-                            changes</span>
-                        <button id="saveBuilderBtn" class="btn btn-primary">Save Builder Changes</button>
-                        <button id="clearAllBtn" class="btn btn-danger">Clear All / Reset</button>
+                    <div class="builder-action-dock" id="builderActionDock">
+                        <div class="builder-actions">
+                            <span id="builderDirtyBadge" class="builder-dirty-badge" style="display: none;">Unsaved
+                                changes</span>
+                            <button id="saveBuilderBtn" class="btn btn-primary">Save Builder Changes</button>
+                            <button id="clearAllBtn" class="btn btn-danger">Clear All / Reset</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -121,7 +155,7 @@
                             <span id="showWiFiLevel">—</span>
                         </div>
                         <div class="status-item-full">
-                            <span class="label">Boards:</span>
+                            <span class="label">Relay Boards:</span>
                             <span id="showBoardCount">—</span>
                         </div>
                     </div>
@@ -142,9 +176,6 @@
                     </div>
                 </div>
 
-                <!-- Zones Grid -->
-                <div class="zones-grid" id="showZoneGrid"></div>
-
                 <!-- Auto Show Panel (hidden by default) -->
                 <div id="autoShowPanel" class="auto-show-panel card" style="display: none;">
                     <h3>Auto Show</h3>
@@ -155,6 +186,9 @@
                         <progress id="showProgressBar" max="100" value="0"></progress>
                     </div>
                 </div>
+
+                <!-- Zones Grid -->
+                <div class="zones-grid" id="showZoneGrid"></div>
 
                 <div class="aux-controls card">
                     <h3>Auxiliary Controls</h3>
@@ -195,7 +229,7 @@
                     <!-- External network sub-section -->
                     <div class="wifi-sub">
                         <h4>External Network (Client Mode)</h4>
-                        <p class="muted" style="margin-bottom: 0.75rem;">Connect to a local access point. The hosted AP
+                        <p class="muted">Connect to a local access point. The hosted AP
                             will be disabled while connected.</p>
                         <div class="setting-group">
                             <label>Network SSID:</label>
@@ -400,19 +434,52 @@
         let wsReconnectAttempts = 0;
         const MAX_RECONNECT_ATTEMPTS = 10;
         let wifiConnectStartAt = 0;
+        let wsLinkUp = false;
+        let lastWsMessageAt = 0;
         const WIFI_CONNECT_STALE_MS = 25000;
+        const WS_STALE_MS = 12000;
         const CLIENT_KEY_STORAGE_KEY = 'apx_client_key';
+
+        function syncLayoutOffsets() {
+            const topBar = document.querySelector('.top-bar');
+            if (topBar) {
+                document.documentElement.style.setProperty('--top-bar-height', `${topBar.offsetHeight}px`);
+            }
+
+            const builderDock = document.getElementById('builderActionDock');
+            if (builderDock) {
+                document.documentElement.style.setProperty('--builder-dock-height', `${builderDock.offsetHeight}px`);
+            }
+        }
 
         function defaultZone(index) {
             return {
                 id: index,
                 description: '',
                 time: 0,
-                enabled: true,
+                enabled: false,
                 group: 0,
                 order: index,
                 continuity: 0
             };
+        }
+
+        function isControllerNetworkHealthy() {
+            return Boolean(appState.wifiConfig.connected || appState.wifiConfig.apActive || appState.wifiConfig.connecting);
+        }
+
+        function renderConnectionIndicator() {
+            const indicator = document.getElementById('connectionDot');
+            if (!indicator) {
+                return;
+            }
+
+            const fresh = lastWsMessageAt > 0 && (Date.now() - lastWsMessageAt) <= WS_STALE_MS;
+            const connected = wsLinkUp && fresh && isControllerNetworkHealthy();
+
+            indicator.classList.toggle('connected', connected);
+            indicator.classList.toggle('disconnected', !connected);
+            indicator.title = connected ? 'Controller connected' : 'Controller disconnected';
         }
 
         function normalizePageId(pathname) {
@@ -466,18 +533,24 @@
 
             ws.onopen = () => {
                 wsReconnectAttempts = 0;
-                document.getElementById('connectionDot').classList.add('connected');
+                wsLinkUp = true;
+                lastWsMessageAt = Date.now();
+                renderConnectionIndicator();
                 wsSend({ type: 'client_hello', clientKey: getOrCreateClientKey() });
                 wsSend({ type: 'get_state' });
                 wsSend({ type: 'get_role' });
             };
 
             ws.onmessage = (event) => {
+                lastWsMessageAt = Date.now();
                 try {
-                    handleMessage(JSON.parse(event.data));
+                    const raw = typeof event.data === 'string' ? event.data : String(event.data || '');
+                    const normalized = raw.replace(/^\u0000+/, '').trim();
+                    handleMessage(JSON.parse(normalized));
                 } catch (error) {
                     console.error('Failed to parse message:', error);
                 }
+                renderConnectionIndicator();
             };
 
             ws.onerror = (error) => {
@@ -485,7 +558,8 @@
             };
 
             ws.onclose = () => {
-                document.getElementById('connectionDot').classList.remove('connected');
+                wsLinkUp = false;
+                renderConnectionIndicator();
                 attemptReconnect();
             };
         }
@@ -650,6 +724,8 @@
 
             appState.wifiLevel = levels[msg.level] || 'UNKNOWN';
             appState.wifiRssi = Number(msg.rssi ?? 0);
+            appState.wifiConfig.connected = Boolean(msg.connected);
+            appState.wifiConfig.currentSsid = String(msg.ssid || appState.wifiConfig.currentSsid || '');
 
             const ssid = String(msg.ssid || appState.wifiConfig.currentSsid || '');
             const connected = Boolean(msg.connected);
@@ -662,6 +738,7 @@
             document.getElementById('showWiFiLevel').textContent = statusText;
             document.getElementById('wifiIcon').src = iconSrc;
             document.getElementById('showWiFiIcon').src = iconSrc;
+            renderStatusOverview();
         }
 
         function updateWifiScanResults(msg) {
@@ -685,11 +762,30 @@
             if (typeof msg.masterArmed === 'boolean') {
                 appState.masterArmed = msg.masterArmed;
             }
+            if (typeof msg.estopActive === 'boolean') {
+                appState.estopActive = msg.estopActive;
+            }
+            if (typeof msg.estopResetPending === 'boolean') {
+                appState.estopResetPending = msg.estopResetPending;
+            }
+            if (typeof msg.wifiConnected === 'boolean') {
+                appState.wifiConfig.connected = msg.wifiConnected;
+            }
+            if (typeof msg.wifiApActive === 'boolean') {
+                appState.wifiConfig.apActive = msg.wifiApActive;
+            }
+            if (typeof msg.wifiConnecting === 'boolean') {
+                appState.wifiConfig.connecting = msg.wifiConnecting;
+            }
             if (Array.isArray(msg.auxState) && msg.auxState.length >= 2) {
                 appState.auxState = [Boolean(msg.auxState[0]), Boolean(msg.auxState[1])];
             }
             renderArmStatus();
+            renderEStopButton();
             renderAuxButtons();
+            renderEStopResetButton();
+            renderStatusOverview();
+            renderConnectionIndicator();
             renderShowZones();
         }
 
@@ -699,6 +795,7 @@
             appState.showStep = Number(msg.step ?? appState.showStep);
             appState.showTotal = Number(msg.total ?? appState.showTotal);
             renderShowStatePanel();
+            renderStatusOverview();
         }
 
         function handleShowProgress(msg) {
@@ -785,8 +882,10 @@
             appState.relayTestRunning = false;
             document.getElementById('testModal').style.display = 'none';
             renderArmStatus();
+            renderEStopButton();
             renderShowZones();
             renderEStopResetButton();
+            renderStatusOverview();
             showToast('Emergency stop activated', 'error');
         }
 
@@ -815,8 +914,11 @@
             updateBuilderDirtyBadge();
             renderShowZones();
             renderAuxButtons();
+            renderEStopButton();
             renderEStopResetButton();
             renderShowStatePanel();
+            renderStatusOverview();
+            renderConnectionIndicator();
             syncShowMode();
             document.getElementById('showBoardCount').textContent = `${appState.boardCount}`;
             document.getElementById('detectedBoards').textContent = `${appState.boardCount}`;
@@ -827,6 +929,62 @@
             document.getElementById('armStatus').textContent = armed ? 'ARMED' : 'DISARMED';
             document.getElementById('masterArmToggle').checked = armed;
             document.querySelector('.master-control').classList.toggle('armed', armed);
+            document.querySelector('.logo').classList.toggle('armed', armed);
+            const statusMasterArm = document.getElementById('statusMasterArm');
+            if (statusMasterArm) {
+                statusMasterArm.textContent = armed ? 'ARMED' : 'DISARMED';
+                statusMasterArm.className = `status-badge ${armed ? 'status-badge-danger' : 'status-badge-safe'}`;
+            }
+        }
+
+        function renderEStopButton() {
+            const button = document.getElementById('eStopBtn');
+            button.style.display = appState.masterArmed ? 'inline-flex' : 'none';
+        }
+
+        function renderStatusOverview() {
+            const statusEStop = document.getElementById('statusEStop');
+            if (statusEStop) {
+                if (appState.estopActive) {
+                    statusEStop.textContent = appState.estopResetPending ? 'RESET PENDING' : 'ACTIVE';
+                    statusEStop.className = 'status-badge status-badge-danger';
+                } else {
+                    statusEStop.textContent = 'INACTIVE';
+                    statusEStop.className = 'status-badge status-badge-safe';
+                }
+            }
+
+            const statusApMode = document.getElementById('statusApMode');
+            if (statusApMode) {
+                const apState = appState.wifiConfig.apActive ? 'AP Active' : 'AP Disabled';
+                const staState = appState.wifiConfig.connected
+                    ? `STA Connected (${appState.wifiConfig.currentSsid || 'network'})`
+                    : (appState.wifiConfig.connecting ? 'STA Connecting' : 'STA Disconnected');
+                statusApMode.textContent = `${apState} | ${staState}`;
+            }
+
+            const statusShowState = document.getElementById('statusShowState');
+            if (statusShowState) {
+                if (appState.showRunning && appState.showTotal > 0) {
+                    statusShowState.textContent = `Running (${appState.showStep}/${appState.showTotal})`;
+                } else if (appState.showRunning) {
+                    statusShowState.textContent = 'Running';
+                } else {
+                    statusShowState.textContent = 'Idle';
+                }
+            }
+
+            const statusIgniterDuration = document.getElementById('statusIgniterDuration');
+            if (statusIgniterDuration) {
+                const igniterDurationSec = Number(appState.settings.igniterDurationSec ?? 0).toFixed(1);
+                statusIgniterDuration.textContent = `${igniterDurationSec}s`;
+            }
+
+            const statusEnabledCounts = document.getElementById('statusEnabledCounts');
+            if (statusEnabledCounts) {
+                const { enabledGroups, enabledZones } = calculateEnabledCounts();
+                statusEnabledCounts.textContent = `${enabledGroups} groups / ${enabledZones} zones`;
+            }
         }
 
         function renderEStopResetButton() {
@@ -988,9 +1146,12 @@
                 .slice()
                 .sort((left, right) => left.order - right.order || left.id - right.id)
                 .map((zone) => `
-                    <div class="zone-item" data-zone-id="${zone.id}">
+                    <div class="zone-item ${zone.enabled ? 'zone-enabled' : 'zone-disabled'}" data-zone-id="${zone.id}">
                         <div class="zone-main">
-                            <div class="zone-title">Zone ${zone.id + 1}</div>
+                            <div class="zone-title-row">
+                                <div class="zone-title">Zone ${zone.id + 1}</div>
+                                <span class="zone-state-chip ${zone.enabled ? 'zone-enabled' : 'zone-disabled'}">${zone.enabled ? 'Enabled' : 'Disabled'}</span>
+                            </div>
                             <div class="field-stack">
                                 <label>Description</label>
                                 <input type="text" data-field="description" value="${escapeHtml(zone.description)}" placeholder="Cake finale, comet lift, etc.">
@@ -1037,7 +1198,7 @@
                         grouped.set(zone.group, []);
                     }
                     grouped.get(zone.group).push(zone);
-                } else {
+                } else if (zone.enabled) {
                     singles.push(zone);
                 }
             });
@@ -1047,20 +1208,18 @@
                 const continuityLabel = CONTINUITY_LABELS[zone.continuity] || 'Unknown';
                 const readyPct = readyPercent(zone.id, now);
                 const firingPct = firingPercent(zone.id, now);
-                const canControl = appState.role === 'controller' && appState.masterArmed && zone.enabled && !appState.estopActive;
+                const canControl = appState.role === 'controller' && appState.masterArmed && !appState.estopActive;
                 const isReady = readyPct > 0;
                 const isRunning = firingPct > 0;
-                const buttonLabel = !zone.enabled
-                    ? 'Disabled'
-                    : !appState.masterArmed
-                        ? 'Arm Required'
-                        : appState.estopActive
-                            ? 'E-Stop Active'
-                            : isRunning
-                                ? '<span class="icon-fire">🔥</span> Running'
-                                : isReady
-                                    ? '<span class="icon-fire">🔥</span> Fire'
-                                    : '<span class="icon-lock">🔒</span> Ready';
+                const buttonLabel = !appState.masterArmed
+                    ? 'Arm Required'
+                    : appState.estopActive
+                        ? 'E-Stop Active'
+                        : isRunning
+                            ? '<span class="icon-fire">🔥</span> Running'
+                            : isReady
+                                ? '<span class="icon-fire">🔥</span> Fire'
+                                : '<span class="icon-lock">🔒</span> Ready';
                 const buttonClass = isRunning ? 'running' : isReady ? 'fire' : 'ready';
 
                 return `
@@ -1086,8 +1245,8 @@
                 .sort((left, right) => left[0] - right[0])
                 .map(([groupId, zones]) => {
                     const zoneIds = zones.map((zone) => zone.id);
-                    const zoneLabel = zones.map((zone) => `${zone.id + 1}`).join(', ');
                     const maxDuration = zones.reduce((maxValue, zone) => Math.max(maxValue, Number(zone.time || 0)), 0);
+                    const enabledCount = zones.filter((zone) => zone.enabled).length;
                     const readyPct = (() => {
                         const expiresAt = readyStateByGroup.get(groupId);
                         if (!expiresAt) return 0;
@@ -1126,16 +1285,39 @@
                                         : '<span class="icon-lock">🔒</span> Ready Group';
                     const buttonClass = isRunning ? 'running' : isReady ? 'fire' : 'ready';
 
+                    const memberCards = zones
+                        .slice()
+                        .sort((left, right) => left.order - right.order || left.id - right.id)
+                        .map((zone) => {
+                            const continuityClass = CONTINUITY_CLASSES[zone.continuity] || 'unknown';
+                            const continuityLabel = CONTINUITY_LABELS[zone.continuity] || 'Unknown';
+                            const zoneStateLabel = zone.enabled ? 'Enabled' : 'Disabled';
+                            return `
+                                <div class="group-zone-card ${zone.enabled ? 'is-enabled' : 'is-disabled'}" data-show-zone-id="${zone.id}">
+                                    <div class="group-zone-head">
+                                        <span class="group-zone-name">Zone ${zone.id + 1}</span>
+                                        <div class="continuity-dot ${continuityClass}" title="${continuityLabel}"></div>
+                                    </div>
+                                    <div class="group-zone-desc">${escapeHtml(zone.description || 'No description')}</div>
+                                    <div class="group-zone-meta">
+                                        <span class="group-zone-state ${zone.enabled ? 'is-enabled' : 'is-disabled'}">${zoneStateLabel}</span>
+                                        <span>${zone.time.toFixed(1)}s</span>
+                                    </div>
+                                </div>
+                            `;
+                        })
+                        .join('');
+
                     return `
-                        <div class="zone-card group-card" data-show-group-id="${groupId}">
-                            <div class="zone-card-header">
+                        <div class="group-container" data-show-group-id="${groupId}">
+                            <div class="group-header">
                                 <div>
                                     <div class="zone-number">Group ${groupId}</div>
-                                    <div class="zone-desc">Zones ${zoneLabel}</div>
+                                    <div class="zone-desc">${zones.length} zones · ${enabledCount} enabled</div>
                                 </div>
-                                <div class="continuity-dot good" title="Grouped"></div>
+                                <div class="muted">Max ${maxDuration.toFixed(1)}s</div>
                             </div>
-                            <div class="muted">Duration ${maxDuration.toFixed(1)}s · ${zoneIds.length} zone(s)</div>
+                            <div class="group-zone-list">${memberCards}</div>
                             <button class="zone-fire-button ${buttonClass}" data-action="fire-group" data-group-id="${groupId}" ${canControl ? '' : 'disabled'}>${buttonLabel}</button>
                             <div class="zone-progress-wrap">
                                 <div class="zone-progress ready-progress" style="width:${readyPct.toFixed(2)}%;"></div>
@@ -1174,6 +1356,7 @@
         function updateBuilderDirtyBadge() {
             const badge = document.getElementById('builderDirtyBadge');
             badge.style.display = builderDirty ? 'inline-flex' : 'none';
+            syncLayoutOffsets();
         }
 
         function markBuilderDirty() {
@@ -1193,6 +1376,33 @@
                 zones: appState.zones.map((zone) => ({ ...zone })),
                 auxNames: [...appState.auxNames]
             };
+        }
+
+        function calculateEnabledCounts() {
+            const groupedZones = new Map();
+            let enabledZones = 0;
+
+            appState.zones.forEach((zone) => {
+                if (zone.enabled) {
+                    enabledZones += 1;
+                }
+
+                const groupId = Number(zone.group || 0);
+                if (groupId <= 0) {
+                    return;
+                }
+
+                if (!groupedZones.has(groupId)) {
+                    groupedZones.set(groupId, []);
+                }
+                groupedZones.get(groupId).push(zone);
+            });
+
+            const enabledGroups = Array.from(groupedZones.values())
+                .filter((zones) => zones.length > 0 && zones.every((zone) => zone.enabled))
+                .length;
+
+            return { enabledGroups, enabledZones };
         }
 
         function requireControllerAction(actionLabel) {
@@ -1227,6 +1437,24 @@
             if (aux1 && aux2) {
                 appState.auxNames = [aux1.value, aux2.value];
             }
+        }
+
+        function setAllBuilderZonesEnabled(enabled) {
+            if (!requireControllerAction(`${enabled ? 'enable' : 'disable'} all builder zones`)) {
+                return;
+            }
+
+            captureBuilderDraftToState();
+            appState.zones = appState.zones.map((zone) => ({
+                ...zone,
+                enabled
+            }));
+
+            markBuilderDirty();
+            renderBuilderZones();
+            renderShowZones();
+            renderStatusOverview();
+            syncLayoutOffsets();
         }
 
         function shouldWarnUnsavedBuilderChanges(nextPage) {
@@ -1330,6 +1558,8 @@
             } else if (appState.page === 'settings') {
                 hydrateSettingsForm();
             }
+
+            syncLayoutOffsets();
         }
 
         function reorderZone(zoneId, direction) {
@@ -1480,7 +1710,7 @@
 
             showConfirm(
                 'Clear All',
-                'This clears all zone descriptions, times, groups, and order assignments. Continue?',
+                'This clears all zone descriptions, times, groups, and order assignments, and sets all zones to Disabled. Continue?',
                 () => {
                     if (wsSend({ type: 'clear_all' })) {
                         clearBuilderDirty();
@@ -1591,6 +1821,11 @@
                 return;
             }
 
+            const zone = appState.zones.find((entry) => entry.id === zoneId);
+            if (!zone || !zone.enabled) {
+                return;
+            }
+
             const now = Date.now();
             const readyUntil = readyStateByZone.get(zoneId) || 0;
             const runningUntil = firingStateByZone.get(zoneId) || 0;
@@ -1613,6 +1848,11 @@
 
         function fireGroup(groupId) {
             if (appState.role !== 'controller' || !appState.masterArmed || appState.estopActive) {
+                return;
+            }
+
+            const groupZones = appState.zones.filter((zone) => zone.group === groupId);
+            if (groupZones.length === 0 || !groupZones.every((zone) => zone.enabled)) {
                 return;
             }
 
@@ -1673,7 +1913,9 @@
             document.getElementById('eStopResetMode').addEventListener('change', saveSafetySettings);
             document.getElementById('calibrateBtn').addEventListener('click', saveContinuityThresholds);
             document.getElementById('relayTestBtn').addEventListener('click', startRelayTest);
-            document.getElementById('testStopBtn').addEventListener('click', () => wsSend({ type: 'estop' }));
+            document.getElementById('testStopBtn').addEventListener('click', () => wsSend({ type: 'relay_test', action: 'stop' }));
+            document.getElementById('enableAllBtn').addEventListener('click', () => setAllBuilderZonesEnabled(true));
+            document.getElementById('disableAllBtn').addEventListener('click', () => setAllBuilderZonesEnabled(false));
             document.getElementById('saveBuilderBtn').addEventListener('click', saveBuilderChanges);
             document.getElementById('clearAllBtn').addEventListener('click', clearAllShowData);
             document.getElementById('exportBtn').addEventListener('click', exportShowData);
@@ -1720,6 +1962,7 @@
             document.getElementById('zonesList').addEventListener('change', () => {
                 captureBuilderDraftToState();
                 markBuilderDirty();
+                renderBuilderZones();
             });
 
             document.getElementById('aux1Name').addEventListener('input', () => {
@@ -1730,6 +1973,8 @@
                 captureBuilderDraftToState();
                 markBuilderDirty();
             });
+
+            window.addEventListener('resize', syncLayoutOffsets);
 
             document.getElementById('showZoneGrid').addEventListener('click', (event) => {
                 const groupButton = event.target.closest('[data-action="fire-group"]');
@@ -1825,10 +2070,15 @@
             }
         }, 120);
 
+        setInterval(() => {
+            renderConnectionIndicator();
+        }, 2000);
+
         function initializeApp() {
             bindStaticEvents();
             showPage(normalizePageId(window.location.pathname), { pushHistory: false });
             renderApp();
+            syncLayoutOffsets();
             connectWebSocket();
         }
 

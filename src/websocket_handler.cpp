@@ -568,11 +568,16 @@ void WebSocketHandler::broadcastRoleAssignment() {
 }
 
 void WebSocketHandler::broadcastSystemStatus() {
-    StaticJsonDocument<256> doc;
+    StaticJsonDocument<384> doc;
     
     doc["type"] = "system_status";
     doc["masterArmed"] = relayManager.isMasterArmed();
+    doc["estopActive"] = estopLatched;
+    doc["estopResetPending"] = estopResetPending;
     doc["zonesFiring"] = relayManager.isZoneFiring();
+    doc["wifiConnected"] = wifiManager.isClientConnected();
+    doc["wifiApActive"] = wifiManager.isAPActive();
+    doc["wifiConnecting"] = wifiManager.isConnecting();
     JsonArray auxState = doc.createNestedArray("auxState");
     auxState.add(relayManager.getAuxRelayState(0));
     auxState.add(relayManager.getAuxRelayState(1));
@@ -816,6 +821,7 @@ void WebSocketHandler::handleEStopReset(uint32_t clientId) {
 
     if (mode == EStopResetMode::TWO_STEP_CONFIRM && !estopResetPending) {
         estopResetPending = true;
+        broadcastSystemStatus();
         broadcastError("CONFIRM_RESET", "Press reset again to clear E-Stop");
         return;
     }
@@ -1102,6 +1108,28 @@ void WebSocketHandler::handleWiFiConnectCommand(uint32_t clientId, const char* d
 void WebSocketHandler::handleRelayTestCommand(uint32_t clientId, const char* data) {
     if (clientId != controllerClientId) {
         broadcastError("UNAUTHORIZED", "Only controller can run relay test");
+        return;
+    }
+
+    StaticJsonDocument<128> doc;
+    deserializeJson(doc, data);
+    const char* action = doc["action"] | "start";
+
+    if (strcmp(action, "stop") == 0) {
+        if (relayTestActive) {
+            stopRelayTest(false);
+        } else {
+            broadcastShowProgress(0, 0, 0);
+        }
+        relayManager.setMasterArm(false);
+        relayManager.setAllRelaysOff();
+        broadcastSystemStatus();
+        markStateDirty();
+        return;
+    }
+
+    if (strcmp(action, "start") != 0) {
+        broadcastError("INVALID_ACTION", "Relay test action must be start or stop");
         return;
     }
 

@@ -80,7 +80,7 @@ void StorageManager::initZoneDefaults() {
     for (uint8_t i = 0; i < MAX_ZONES; i++) {
         zoneCache[i].description = "";
         zoneCache[i].time        = 0.0f;
-        zoneCache[i].enabled     = true;
+        zoneCache[i].enabled     = false;
         zoneCache[i].group       = 0;
         zoneCache[i].order       = i;
     }
@@ -118,7 +118,7 @@ bool StorageManager::loadZonesFromFile() {
         if (idx >= MAX_ZONES) continue;
         zoneCache[idx].description = zone["d"].as<String>();
         zoneCache[idx].time        = zone["t"] | 0.0f;
-        zoneCache[idx].enabled     = zone["e"] | true;
+        zoneCache[idx].enabled     = zone["e"] | false;
         zoneCache[idx].group       = zone["g"] | (uint8_t)0;
         zoneCache[idx].order       = zone["o"] | idx;
     }
@@ -136,7 +136,7 @@ bool StorageManager::saveZonesToFile() {
         const ZoneData& z = zoneCache[i];
         // Only write non-default zones to save space; always write if group/order/desc set.
         if (z.description.length() == 0 && z.time == 0.0f && z.group == 0 &&
-            z.order == i && z.enabled) {
+            z.order == i && !z.enabled) {
             continue;
         }
         JsonObject entry = arr.createNestedObject();
@@ -232,7 +232,7 @@ float StorageManager::getZoneTime(uint8_t zoneIdx) {
 }
 
 bool StorageManager::isZoneEnabled(uint8_t zoneIdx) {
-    if (zoneIdx >= MAX_ZONES) return true;
+    if (zoneIdx >= MAX_ZONES) return false;
     return zoneCache[zoneIdx].enabled;
 }
 
@@ -435,7 +435,7 @@ String StorageManager::exportShowJson() {
     for (uint8_t i = 0; i < MAX_ZONES; i++) {
         const ZoneData& z = zoneCache[i];
         if (z.description.length() == 0 && z.time == 0.0f && z.group == 0 &&
-            z.order == i && z.enabled) {
+            z.order == i && !z.enabled) {
             continue;  // skip unmodified default zones to keep export compact
         }
         JsonObject zone = zonesArray.createNestedObject();
