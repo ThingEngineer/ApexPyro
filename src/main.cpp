@@ -14,6 +14,9 @@
 
 static uint8_t boardPresentCount = 0;
 static bool boardPresent[3] = {false, false, false};
+static bool killSwitchStableState = false;
+static bool killSwitchRawState = false;
+static uint32_t killSwitchLastTransitionMs = 0;
 
 // Relay board register constants
 static const uint8_t REG_OUTPUT_PORT0 = 0x02;  // Relays A0-A7
@@ -108,6 +111,12 @@ void setup() {
   digitalWrite(MUX_S1_PIN, LOW);
   digitalWrite(MUX_S2_PIN, LOW);
   digitalWrite(MUX_S3_PIN, LOW);
+
+  // Physical kill switch input (active HIGH)
+  pinMode(KILL_SWITCH_PIN, INPUT);
+  killSwitchStableState = (digitalRead(KILL_SWITCH_PIN) == HIGH);
+  killSwitchRawState = killSwitchStableState;
+  killSwitchLastTransitionMs = millis();
   
   Serial.println("[BOOT] Safety GPIO states confirmed");
   delay(100);
@@ -183,6 +192,21 @@ void setup() {
 // ============================================================================
 
 void loop() {
+  // Debounced physical kill switch handling.
+  bool rawState = (digitalRead(KILL_SWITCH_PIN) == HIGH);
+  if (rawState != killSwitchRawState) {
+    killSwitchRawState = rawState;
+    killSwitchLastTransitionMs = millis();
+  }
+
+  if ((millis() - killSwitchLastTransitionMs) >= KILL_SWITCH_DEBOUNCE_MS && killSwitchStableState != killSwitchRawState) {
+    killSwitchStableState = killSwitchRawState;
+    if (killSwitchStableState) {
+      Serial.println("[SAFETY] Physical kill switch triggered");
+      wsHandler.triggerEmergencyStop("Physical kill switch");
+    }
+  }
+
   // Update all managers
   continuityManager.update();
   relayManager.update();

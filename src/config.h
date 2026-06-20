@@ -23,6 +23,10 @@ static const int MASTER_ARM_RELAY_PIN = 25;  // NO terminal → igniter bus powe
 static const int AUX_RELAY_1_PIN = 26;
 static const int AUX_RELAY_2_PIN = 27;
 
+// Safety Input Pins
+static const int KILL_SWITCH_PIN = 34;  // Input-only pin, active HIGH trigger
+static const uint16_t KILL_SWITCH_DEBOUNCE_MS = 50;
+
 // ============================================================================
 // I2C ADDRESSES & ADS1115 CHANNELS
 // ============================================================================
