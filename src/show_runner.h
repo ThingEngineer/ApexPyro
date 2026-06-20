@@ -13,6 +13,8 @@ enum class ShowState : uint8_t {
 
 struct ZoneQueueItem {
     uint8_t zoneIdx;
+    uint8_t groupId;
+    std::vector<uint8_t> zoneIndices;
     float timeSec;
     bool isGroupFire;  // If true, zoneIdx points to a group
 };
