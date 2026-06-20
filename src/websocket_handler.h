@@ -25,6 +25,8 @@ public:
     void broadcastError(const char* code, const char* message);
     void broadcastRoleAssignment();
     void broadcastSystemStatus();
+    void broadcastShowState();
+    void triggerEmergencyStop(const char* reason = "E-Stop");
     
 private:
     struct ClientIdentity {
@@ -39,25 +41,38 @@ private:
     bool controllerRoleLocked;
     String controllerOwnerKey;
     uint32_t lastHeartbeatMs;
+    uint32_t lastControllerMessageMs;
+    uint32_t lastControllerPongMs;
+    uint32_t lastShowStateBroadcastMs;
+    uint32_t lastFullStateBroadcastMs;
+    uint32_t controllerVacantSinceMs;
+    bool estopLatched;
+    bool estopResetPending;
+    bool fullStateDirty;
     std::vector<uint32_t> viewerClientIds;
     std::vector<ClientIdentity> clientIdentities;
     
     // Heartbeat & timeout
     void handleHeartbeatTimeout();
     void sendHeartbeat();
+    void markStateDirty();
     bool validateChecksum(const char* command, uint8_t zone, uint32_t timestamp, const char* checksum);
     
     // Message handlers
+    void handleWiFiScanCommand(uint32_t clientId);
     void handleFireCommand(uint32_t clientId, const char* data);
+    void handleFireGroupCommand(uint32_t clientId, const char* data);
     void handleArmCommand(uint32_t clientId, const char* data);
+    void handleExportShowCommand(uint32_t clientId);
+    void handleClearAllCommand(uint32_t clientId);
     void handleAuxCommand(uint32_t clientId, const char* data);
     void handleEStopCommand(uint32_t clientId);
     void handleEStopReset(uint32_t clientId);
     void handleAutoStartCommand(uint32_t clientId, const char* data);
     void handleAutoStopCommand(uint32_t clientId);
     void handleZoneConfigCommand(uint32_t clientId, const char* data);
-    void handleGroupConfigCommand(uint32_t clientId, const char* data);
     void handleSettingCommand(uint32_t clientId, const char* data);
+    void handleBuilderSaveCommand(uint32_t clientId, const char* data);
     void handleAuxNameCommand(uint32_t clientId, const char* data);
     void handleApConfigCommand(uint32_t clientId, const char* data);
     void handleForgetWiFiCommand(uint32_t clientId);

@@ -7,7 +7,8 @@
 #include <LittleFS.h>
 
 namespace {
-static const uint8_t MAX_GROUPS = 16;
+const uint32_t FULL_STATE_BROADCAST_MIN_INTERVAL_MS = 300;
+const uint32_t ROLE_LOCK_RECLAIM_TIMEOUT_MS = 15000;
 }
 
 WebSocketHandler wsHandler;
@@ -16,7 +17,10 @@ WebSocketHandler wsHandler;
 
 
 WebSocketHandler::WebSocketHandler()
-    : server(80), ws("/ws"), controllerClientId(0), controllerRoleLocked(true), controllerOwnerKey(""), lastHeartbeatMs(0), relayTestActive(false), relayTestStepIdx(0), relayTestStepStartMs(0), relayTestPulseMs(0) {
+    : server(80), ws("/ws"), controllerClientId(0), controllerRoleLocked(true), controllerOwnerKey(""),
+    lastHeartbeatMs(0), lastControllerMessageMs(0), lastControllerPongMs(0), lastShowStateBroadcastMs(0),
+    lastFullStateBroadcastMs(0), controllerVacantSinceMs(0), estopLatched(false), estopResetPending(false),
+    fullStateDirty(false), relayTestActive(false), relayTestStepIdx(0), relayTestStepStartMs(0), relayTestPulseMs(0) {
 }
 
 bool WebSocketHandler::hasViewer(uint32_t clientId) const {
@@ -147,17 +151,27 @@ void WebSocketHandler::begin() {
     server.begin();
     Serial.println("[WebSocketHandler] WebSocket server started on port 80");
     
-    lastHeartbeatMs = millis();
+    uint32_t now = millis();
+    lastHeartbeatMs = now;
+    lastControllerMessageMs = now;
+    lastControllerPongMs = now;
+    lastShowStateBroadcastMs = now;
+    lastFullStateBroadcastMs = now;
 }
 
 void WebSocketHandler::update() {
     uint32_t now = millis();
+
+    // Keep async websocket client list healthy under reconnect churn.
+    ws.cleanupClients();
     
     // Send heartbeat every 5 seconds
     if (now - lastHeartbeatMs >= WEBSOCKET_HEARTBEAT_INTERVAL_MS) {
         sendHeartbeat();
         lastHeartbeatMs = now;
     }
+
+    handleHeartbeatTimeout();
     
     // Broadcast periodic status
     static uint32_t lastBroadcast = 0;
@@ -166,6 +180,23 @@ void WebSocketHandler::update() {
         broadcastBatteryStatus();
         broadcastWiFiStatus();
         lastBroadcast = now;
+    }
+
+    if (now - lastShowStateBroadcastMs >= 500) {
+        broadcastShowState();
+        lastShowStateBroadcastMs = now;
+    }
+
+    if (fullStateDirty && now - lastFullStateBroadcastMs >= FULL_STATE_BROADCAST_MIN_INTERVAL_MS) {
+        broadcastFullState();
+        lastFullStateBroadcastMs = now;
+        fullStateDirty = false;
+    }
+
+    // Broadcast lightweight system_status once after each relay auto-off so UI
+    // fire buttons and arm state are updated promptly without a full-state flood.
+    if (relayManager.consumeFireComplete()) {
+        broadcastSystemStatus();
     }
 
     if (relayTestActive && !relayManager.isZoneFiring()) {
@@ -187,6 +218,11 @@ void WebSocketHandler::onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* c
         // Send authoritative initial state directly to this client.
         wsHandler.broadcastFullState(clientId);
         wsHandler.sendRoleToClient(clientId);
+        if (wsHandler.controllerClientId == clientId) {
+            uint32_t now = millis();
+            wsHandler.lastControllerMessageMs = now;
+            wsHandler.lastControllerPongMs = now;
+        }
 
     } else if (type == WS_EVT_DISCONNECT) {
         uint32_t clientId = client->id();
@@ -202,7 +238,16 @@ void WebSocketHandler::onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* c
                 }
             }
 
+            if (showRunner.isShowRunning() && storage.getAbortOnDisconnect()) {
+                Serial.println("[WebSocketHandler] Controller disconnected while auto show running; aborting by policy");
+                wsHandler.triggerEmergencyStop("Controller disconnected");
+            } else if (!showRunner.isShowRunning()) {
+                relayManager.setMasterArm(false);
+                relayManager.setAllRelaysOff();
+            }
+
             wsHandler.controllerClientId = 0;
+            wsHandler.controllerVacantSinceMs = millis();
             if (!wsHandler.controllerRoleLocked) {
                 wsHandler.promoteViewerToController();
             } else {
@@ -215,68 +260,88 @@ void WebSocketHandler::onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* c
     } else if (type == WS_EVT_DATA) {
         AwsFrameInfo* info = (AwsFrameInfo*)arg;
         uint32_t clientId = client->id();
-        
+
         if (info->final && info->index == 0 && info->len == len) {
-            // Complete message
-            data[len] = 0;  // Null-terminate
-            
-            StaticJsonDocument<512> doc;
-            DeserializationError error = deserializeJson(doc, (const char*)data);
-            
+            String payload;
+            payload.reserve(len + 1);
+            for (size_t i = 0; i < len; i++) {
+                payload += static_cast<char>(data[i]);
+            }
+
+            StaticJsonDocument<32> typeFilter;
+            typeFilter["type"] = true;
+            StaticJsonDocument<96> doc;
+            DeserializationError error = deserializeJson(doc, payload, DeserializationOption::Filter(typeFilter));
             if (error) {
                 Serial.printf("[WebSocketHandler] JSON parse error: %s\n", error.c_str());
                 return;
             }
-            
+
             const char* msgType = doc["type"] | "";
-            
-            // Route message based on type
+
+            if (clientId == wsHandler.controllerClientId) {
+                wsHandler.lastControllerMessageMs = millis();
+            }
+
             if (strcmp(msgType, "fire") == 0) {
-                wsHandler.handleFireCommand(clientId, (const char*)data);
+                wsHandler.handleFireCommand(clientId, payload.c_str());
+            } else if (strcmp(msgType, "fire_group") == 0) {
+                wsHandler.handleFireGroupCommand(clientId, payload.c_str());
             } else if (strcmp(msgType, "arm") == 0) {
-                wsHandler.handleArmCommand(clientId, (const char*)data);
+                wsHandler.handleArmCommand(clientId, payload.c_str());
             } else if (strcmp(msgType, "aux") == 0) {
-                wsHandler.handleAuxCommand(clientId, (const char*)data);
+                wsHandler.handleAuxCommand(clientId, payload.c_str());
             } else if (strcmp(msgType, "estop") == 0) {
                 wsHandler.handleEStopCommand(clientId);
             } else if (strcmp(msgType, "estop_reset") == 0) {
                 wsHandler.handleEStopReset(clientId);
             } else if (strcmp(msgType, "auto_start") == 0) {
-                wsHandler.handleAutoStartCommand(clientId, (const char*)data);
+                wsHandler.handleAutoStartCommand(clientId, payload.c_str());
             } else if (strcmp(msgType, "auto_stop") == 0) {
                 wsHandler.handleAutoStopCommand(clientId);
             } else if (strcmp(msgType, "set_zone") == 0) {
-                wsHandler.handleZoneConfigCommand(clientId, (const char*)data);
-            } else if (strcmp(msgType, "set_group") == 0) {
-                wsHandler.handleGroupConfigCommand(clientId, (const char*)data);
+                wsHandler.handleZoneConfigCommand(clientId, payload.c_str());
             } else if (strcmp(msgType, "set_setting") == 0) {
-                wsHandler.handleSettingCommand(clientId, (const char*)data);
+                wsHandler.handleSettingCommand(clientId, payload.c_str());
+            } else if (strcmp(msgType, "save_builder") == 0) {
+                wsHandler.handleBuilderSaveCommand(clientId, payload.c_str());
             } else if (strcmp(msgType, "set_aux_name") == 0) {
-                wsHandler.handleAuxNameCommand(clientId, (const char*)data);
+                wsHandler.handleAuxNameCommand(clientId, payload.c_str());
             } else if (strcmp(msgType, "set_ap_credentials") == 0) {
-                wsHandler.handleApConfigCommand(clientId, (const char*)data);
+                wsHandler.handleApConfigCommand(clientId, payload.c_str());
             } else if (strcmp(msgType, "wifi_scan") == 0) {
+                wsHandler.handleWiFiScanCommand(clientId);
             } else if (strcmp(msgType, "wifi_connect") == 0) {
-                wsHandler.handleWiFiConnectCommand(clientId, (const char*)data);
+                wsHandler.handleWiFiConnectCommand(clientId, payload.c_str());
             } else if (strcmp(msgType, "wifi_forget") == 0) {
                 wsHandler.handleForgetWiFiCommand(clientId);
+            } else if (strcmp(msgType, "clear_all") == 0) {
+                wsHandler.handleClearAllCommand(clientId);
+            } else if (strcmp(msgType, "export_show") == 0) {
+                wsHandler.handleExportShowCommand(clientId);
             } else if (strcmp(msgType, "get_role") == 0) {
                 wsHandler.sendRoleToClient(clientId);
             } else if (strcmp(msgType, "get_state") == 0) {
                 wsHandler.broadcastFullState(clientId);
             } else if (strcmp(msgType, "import_show") == 0) {
-                wsHandler.handleImportShowCommand(clientId, (const char*)data);
+                wsHandler.handleImportShowCommand(clientId, payload.c_str());
             } else if (strcmp(msgType, "relay_test") == 0) {
-                wsHandler.handleRelayTestCommand(clientId, (const char*)data);
+                wsHandler.handleRelayTestCommand(clientId, payload.c_str());
             } else if (strcmp(msgType, "client_hello") == 0) {
-                wsHandler.handleClientHello(clientId, (const char*)data);
+                wsHandler.handleClientHello(clientId, payload.c_str());
             } else if (strcmp(msgType, "set_role_lock") == 0) {
-                wsHandler.handleRoleLockCommand(clientId, (const char*)data);
+                wsHandler.handleRoleLockCommand(clientId, payload.c_str());
             } else if (strcmp(msgType, "pong") == 0) {
-                // Heartbeat response
+                if (clientId == wsHandler.controllerClientId) {
+                    wsHandler.lastControllerPongMs = millis();
+                }
             }
         }
     }
+}
+
+void WebSocketHandler::markStateDirty() {
+    fullStateDirty = true;
 }
 
 void WebSocketHandler::removeClient(uint32_t clientId) {
@@ -307,7 +372,7 @@ void WebSocketHandler::promoteViewerToController() {
 void WebSocketHandler::sendHeartbeat() {
     StaticJsonDocument<64> doc;
     doc["type"] = "ping";
-    
+
     String json;
     serializeJson(doc, json);
     ws.textAll(json);
@@ -321,6 +386,10 @@ void WebSocketHandler::broadcastFullState(uint32_t targetClientId) {
     doc["boardCount"] = relayManager.boardPresentCount;
     doc["detectedBoards"] = relayManager.boardPresentCount;
     doc["roleLocked"] = controllerRoleLocked;
+    doc["estopActive"] = estopLatched;
+    doc["estopResetPending"] = estopResetPending;
+    doc["showState"] = static_cast<uint8_t>(showRunner.getShowState());
+    doc["showRunning"] = showRunner.isShowRunning();
 
     if (targetClientId != 0) {
         doc["role"] = (targetClientId == controllerClientId) ? "controller" : "viewer";
@@ -350,20 +419,9 @@ void WebSocketHandler::broadcastFullState(uint32_t targetClientId) {
     auxNames.add(storage.getAuxRelayName(0));
     auxNames.add(storage.getAuxRelayName(1));
 
-    JsonArray groups = doc.createNestedArray("groups");
-    for (uint8_t groupIdx = 0; groupIdx < MAX_GROUPS; groupIdx++) {
-        String name = storage.getGroupName(groupIdx);
-        String members = storage.getGroupMembers(groupIdx);
-        if (name.length() == 0 && members.length() == 0) {
-            continue;
-        }
-
-        JsonObject group = groups.createNestedObject();
-        group["id"] = groupIdx;
-        group["name"] = name;
-        group["members"] = members;
-        group["order"] = storage.getGroupOrder(groupIdx);
-    }
+    JsonArray auxState = doc.createNestedArray("auxState");
+    auxState.add(relayManager.getAuxRelayState(0));
+    auxState.add(relayManager.getAuxRelayState(1));
 
     JsonArray zones = doc.createNestedArray("zones");
     for (uint8_t zoneIdx = 0; zoneIdx < MAX_ZONES; zoneIdx++) {
@@ -393,15 +451,15 @@ void WebSocketHandler::broadcastFullState(uint32_t targetClientId) {
 
 void WebSocketHandler::broadcastContinuity() {
     StaticJsonDocument<768> doc;
-    
+
     doc["type"] = "continuity";
     JsonArray zones = doc.createNestedArray("zones");
-    
+
     for (uint8_t i = 0; i < MAX_ZONES; i++) {
         ContinuityStatus status = continuityManager.getZoneStatus(i);
         zones.add((uint8_t)status);
     }
-    
+
     String json;
     serializeJson(doc, json);
     ws.textAll(json);
@@ -424,6 +482,7 @@ void WebSocketHandler::broadcastWiFiStatus() {
     
     doc["type"] = "wifi";
     doc["level"] = (uint8_t)wifiManager.getRSSILevel();
+    doc["rssi"] = wifiManager.getRSSI();
     doc["ssid"] = wifiManager.getCurrentSSID();
     doc["connected"] = wifiManager.isClientConnected();
     
@@ -514,11 +573,70 @@ void WebSocketHandler::broadcastSystemStatus() {
     doc["type"] = "system_status";
     doc["masterArmed"] = relayManager.isMasterArmed();
     doc["zonesFiring"] = relayManager.isZoneFiring();
+    JsonArray auxState = doc.createNestedArray("auxState");
+    auxState.add(relayManager.getAuxRelayState(0));
+    auxState.add(relayManager.getAuxRelayState(1));
     
     String json;
     serializeJson(doc, json);
     ws.textAll(json);
-    broadcastFullState();
+}
+
+void WebSocketHandler::broadcastShowState() {
+    StaticJsonDocument<192> doc;
+    doc["type"] = "show_state";
+    doc["state"] = static_cast<uint8_t>(showRunner.getShowState());
+    doc["running"] = showRunner.isShowRunning();
+    doc["step"] = showRunner.getCurrentStepIdx();
+    doc["total"] = showRunner.getTotalSteps();
+
+    String json;
+    serializeJson(doc, json);
+    ws.textAll(json);
+}
+
+void WebSocketHandler::handleHeartbeatTimeout() {
+    if (controllerClientId == 0) {
+        return;
+    }
+
+    uint32_t now = millis();
+    uint32_t lastActivityMs = lastControllerPongMs;
+    if (lastControllerMessageMs > lastActivityMs) {
+        lastActivityMs = lastControllerMessageMs;
+    }
+
+    if (now - lastActivityMs < WEBSOCKET_HEARTBEAT_TIMEOUT_MS) {
+        return;
+    }
+
+    Serial.println("[WebSocketHandler] Controller heartbeat timeout");
+    if (showRunner.isShowRunning()) {
+        if (storage.getAbortOnDisconnect()) {
+            triggerEmergencyStop("Controller heartbeat timeout");
+        }
+    } else {
+        relayManager.setMasterArm(false);
+        relayManager.setAllRelaysOff();
+        broadcastSystemStatus();
+        markStateDirty();
+    }
+
+    lastControllerPongMs = now;
+    lastControllerMessageMs = now;
+}
+
+void WebSocketHandler::triggerEmergencyStop(const char* reason) {
+    (void)reason;
+    stopRelayTest(true);
+    showRunner.abortShow();
+    relayManager.setMasterArm(false);
+    relayManager.setAllRelaysOff();
+    estopLatched = true;
+    estopResetPending = false;
+    broadcastEStop();
+    broadcastSystemStatus();
+    markStateDirty();
 }
 
 // ============================================================================
@@ -528,6 +646,11 @@ void WebSocketHandler::broadcastSystemStatus() {
 void WebSocketHandler::handleFireCommand(uint32_t clientId, const char* data) {
     if (clientId != controllerClientId) {
         broadcastError("UNAUTHORIZED", "Only controller can fire");
+        return;
+    }
+
+    if (estopLatched) {
+        broadcastError("ESTOP_ACTIVE", "Reset E-Stop before firing");
         return;
     }
     
@@ -542,10 +665,26 @@ void WebSocketHandler::handleFireCommand(uint32_t clientId, const char* data) {
         broadcastError("BAD_CHECKSUM", "Checksum validation failed");
         return;
     }
+
+    if (zone >= MAX_ZONES) {
+        broadcastError("INVALID_ZONE", "Zone out of range");
+        return;
+    }
+
+    if (!relayManager.isMasterArmed()) {
+        broadcastError("NOT_ARMED", "Master arm is required before firing");
+        return;
+    }
     
+    uint32_t runDurationMs = static_cast<uint32_t>(storage.getZoneTime(zone) * 1000.0f);
+    if (runDurationMs == 0) {
+        runDurationMs = 1;
+    }
+
     uint16_t ignitersOnDuration = storage.getIgniterDuration();
     relayManager.startZoneFire(zone, ignitersOnDuration);
-    broadcastZoneFired(zone, ignitersOnDuration);
+    broadcastZoneFired(zone, runDurationMs);
+    broadcastSystemStatus();
 }
 
 void WebSocketHandler::handleArmCommand(uint32_t clientId, const char* data) {
@@ -565,12 +704,84 @@ void WebSocketHandler::handleArmCommand(uint32_t clientId, const char* data) {
         broadcastError("BAD_CHECKSUM", "Checksum validation failed");
         return;
     }
+
+    if (state && estopLatched) {
+        broadcastError("ESTOP_ACTIVE", "Reset E-Stop before arming");
+        return;
+    }
     
     relayManager.setMasterArm(state);
     broadcastSystemStatus();
 }
 
+void WebSocketHandler::handleFireGroupCommand(uint32_t clientId, const char* data) {
+    if (clientId != controllerClientId) {
+        broadcastError("UNAUTHORIZED", "Only controller can fire");
+        return;
+    }
+
+    if (estopLatched) {
+        broadcastError("ESTOP_ACTIVE", "Reset E-Stop before firing");
+        return;
+    }
+
+    StaticJsonDocument<256> doc;
+    deserializeJson(doc, data);
+
+    uint8_t groupId = doc["group"] | 0;
+    uint32_t ts = doc["ts"] | 0;
+    const char* cs = doc["cs"] | "";
+
+    if (!validateChecksum("FIRE_GROUP", groupId, ts, cs)) {
+        broadcastError("BAD_CHECKSUM", "Checksum validation failed");
+        return;
+    }
+
+    if (!relayManager.isMasterArmed()) {
+        broadcastError("NOT_ARMED", "Master arm is required before firing");
+        return;
+    }
+
+    std::vector<uint8_t> zones;
+    for (uint8_t zoneIdx = 0; zoneIdx < MAX_ZONES; zoneIdx++) {
+        if (!storage.isZoneEnabled(zoneIdx)) {
+            continue;
+        }
+        if (storage.getZoneGroup(zoneIdx) == groupId) {
+            zones.push_back(zoneIdx);
+        }
+    }
+
+    if (zones.empty()) {
+        broadcastError("INVALID_GROUP", "Group has no enabled zones");
+        return;
+    }
+
+    uint32_t runDurationMs = 0;
+    for (uint8_t zoneIdx : zones) {
+        uint32_t zoneDurationMs = static_cast<uint32_t>(storage.getZoneTime(zoneIdx) * 1000.0f);
+        if (zoneDurationMs > runDurationMs) {
+            runDurationMs = zoneDurationMs;
+        }
+    }
+    if (runDurationMs == 0) {
+        runDurationMs = 1;
+    }
+
+    uint16_t ignitersOnDuration = storage.getIgniterDuration();
+    relayManager.startZonesFire(zones, ignitersOnDuration);
+    for (uint8_t zoneIdx : zones) {
+        broadcastZoneFired(zoneIdx, runDurationMs);
+    }
+    broadcastSystemStatus();
+}
+
 void WebSocketHandler::handleAuxCommand(uint32_t clientId, const char* data) {
+    if (clientId != controllerClientId) {
+        broadcastError("UNAUTHORIZED", "Only controller can toggle auxiliary relays");
+        return;
+    }
+
     StaticJsonDocument<256> doc;
     deserializeJson(doc, data);
     
@@ -583,12 +794,7 @@ void WebSocketHandler::handleAuxCommand(uint32_t clientId, const char* data) {
 
 void WebSocketHandler::handleEStopCommand(uint32_t clientId) {
     // E-Stop is allowed from any client (emergency override)
-    stopRelayTest(true);
-    showRunner.abortShow();
-    relayManager.setMasterArm(false);
-    relayManager.setAllRelaysOff();
-    broadcastEStop();
-    broadcastSystemStatus();
+    triggerEmergencyStop("E-Stop button");
 }
 
 void WebSocketHandler::handleEStopReset(uint32_t clientId) {
@@ -596,7 +802,26 @@ void WebSocketHandler::handleEStopReset(uint32_t clientId) {
         broadcastError("UNAUTHORIZED", "Only controller can reset E-Stop");
         return;
     }
-    
+
+    if (!estopLatched) {
+        broadcastSystemStatus();
+        return;
+    }
+
+    EStopResetMode mode = storage.getEStopResetMode();
+    if (mode == EStopResetMode::POWER_CYCLE_ONLY) {
+        broadcastError("RESET_BLOCKED", "Power cycle is required to clear E-Stop");
+        return;
+    }
+
+    if (mode == EStopResetMode::TWO_STEP_CONFIRM && !estopResetPending) {
+        estopResetPending = true;
+        broadcastError("CONFIRM_RESET", "Press reset again to clear E-Stop");
+        return;
+    }
+
+    estopLatched = false;
+    estopResetPending = false;
     broadcastSystemStatus();
 }
 
@@ -606,8 +831,29 @@ void WebSocketHandler::handleAutoStartCommand(uint32_t clientId, const char* dat
         return;
     }
     
-    // Delegate to show runner (when implemented)
-    // For now, just broadcast
+    if (estopLatched) {
+        broadcastError("ESTOP_ACTIVE", "Reset E-Stop before starting auto show");
+        return;
+    }
+
+    StaticJsonDocument<256> doc;
+    deserializeJson(doc, data);
+
+    uint8_t zone = doc["zone"] | 0;
+    uint32_t ts = doc["ts"] | 0;
+    const char* cs = doc["cs"] | "";
+    if (!validateChecksum("AUTO_START", zone, ts, cs)) {
+        broadcastError("BAD_CHECKSUM", "Checksum validation failed");
+        return;
+    }
+
+    if (!showRunner.startShow()) {
+        broadcastError("AUTO_START_FAILED", "Unable to start auto show. Check arm, enabled zones, and timing.");
+        return;
+    }
+
+    broadcastShowState();
+    broadcastSystemStatus();
 }
 
 void WebSocketHandler::handleAutoStopCommand(uint32_t clientId) {
@@ -615,66 +861,164 @@ void WebSocketHandler::handleAutoStopCommand(uint32_t clientId) {
         broadcastError("UNAUTHORIZED", "Only controller can stop auto show");
         return;
     }
+
+    showRunner.stopShow();
+    broadcastShowState();
+    broadcastSystemStatus();
 }
 
 void WebSocketHandler::handleZoneConfigCommand(uint32_t clientId, const char* data) {
-    StaticJsonDocument<512> doc;
-    deserializeJson(doc, data);
-    
-    uint8_t zone = doc["zone"] | 0;
-    if (zone < MAX_ZONES) {
-        if (doc.containsKey("desc")) storage.setZoneDescription(zone, doc["desc"].as<String>());
-        if (doc.containsKey("time")) storage.setZoneTime(zone, doc["time"]);
-        if (doc.containsKey("enabled")) storage.setZoneEnabled(zone, doc["enabled"]);
-        if (doc.containsKey("group")) storage.setZoneGroup(zone, doc["group"]);
-        if (doc.containsKey("order")) storage.setZoneOrder(zone, doc["order"]);
-        broadcastFullState();
+    if (clientId != controllerClientId) {
+        broadcastError("UNAUTHORIZED", "Only controller can update zones");
+        return;
     }
-}
 
-void WebSocketHandler::handleGroupConfigCommand(uint32_t clientId, const char* data) {
     StaticJsonDocument<512> doc;
     deserializeJson(doc, data);
-    
-    uint8_t groupId = doc["id"] | 0;
-    if (doc.containsKey("name")) storage.setGroupName(groupId, doc["name"].as<String>());
-    if (doc.containsKey("members")) storage.setGroupMembers(groupId, doc["members"].as<String>());
-    if (doc.containsKey("order")) storage.setGroupOrder(groupId, doc["order"]);
-    broadcastFullState();
+
+    uint8_t zone = doc["zone"] | 255;
+    if (zone >= MAX_ZONES) {
+        broadcastError("INVALID_ZONE", "Zone index out of range");
+        return;
+    }
+
+    // Use batch write: one NVS open/close for all 5 fields.
+    // Read current persisted values first so unchanged fields are not dirtied.
+    String desc    = doc.containsKey("desc")    ? doc["desc"].as<String>()   : storage.getZoneDescription(zone);
+    float  time    = doc.containsKey("time")    ? doc["time"].as<float>()    : storage.getZoneTime(zone);
+    bool   enabled = doc.containsKey("enabled") ? doc["enabled"].as<bool>()  : storage.isZoneEnabled(zone);
+    uint8_t grp    = doc.containsKey("group")   ? (uint8_t)doc["group"].as<int>() : storage.getZoneGroup(zone);
+    uint8_t ord    = doc.containsKey("order")   ? (uint8_t)doc["order"].as<int>() : storage.getZoneOrder(zone);
+
+    storage.setZoneBatch(zone, desc, time, enabled, grp, ord);
+    Serial.printf("[Storage] Zone %u saved: desc='%s' time=%.2f grp=%u ord=%u enabled=%d\n",
+                  zone, desc.c_str(), time, grp, ord, (int)enabled);
+    markStateDirty();
 }
 
 void WebSocketHandler::handleSettingCommand(uint32_t clientId, const char* data) {
+    if (clientId != controllerClientId) {
+        broadcastError("UNAUTHORIZED", "Only controller can update settings");
+        return;
+    }
+
     // Save generic settings
     StaticJsonDocument<512> doc;
     deserializeJson(doc, data);
     
     const char* key = doc["key"] | "";
-    const char* value = doc["value"] | "";
+    JsonVariant value = doc["value"];
+
+    auto valueAsInt = [&value]() -> int {
+        if (value.is<const char*>()) {
+            return String(value.as<const char*>()).toInt();
+        }
+        return value.as<int>();
+    };
+
+    auto valueAsFloat = [&value]() -> float {
+        if (value.is<const char*>()) {
+            return String(value.as<const char*>()).toFloat();
+        }
+        return value.as<float>();
+    };
+
+    auto valueAsBool = [&value]() -> bool {
+        if (value.is<bool>()) {
+            return value.as<bool>();
+        }
+        if (value.is<const char*>()) {
+            String raw = value.as<const char*>();
+            raw.toLowerCase();
+            return raw == "true" || raw == "1";
+        }
+        return value.as<int>() != 0;
+    };
 
     if (strcmp(key, NVS_KEYS::SETTING_IGNITER_DURATION) == 0) {
-        storage.setIgniterDuration(static_cast<uint16_t>(String(value).toInt()));
+        int ms = valueAsInt();
+        ms = constrain(ms, 100, 10000);
+        storage.setIgniterDuration(static_cast<uint16_t>(ms));
     } else if (strcmp(key, NVS_KEYS::SETTING_AUTO_DELAY) == 0) {
-        storage.setAutoDelay(static_cast<uint8_t>(String(value).toInt()));
+        int delaySec = valueAsInt();
+        delaySec = constrain(delaySec, 0, 60);
+        storage.setAutoDelay(static_cast<uint8_t>(delaySec));
     } else if (strcmp(key, NVS_KEYS::SETTING_ABORT_ON_DISCONNECT) == 0) {
-        storage.setAbortOnDisconnect(String(value) == "true" || String(value) == "1");
+        storage.setAbortOnDisconnect(valueAsBool());
     } else if (strcmp(key, NVS_KEYS::SETTING_ESTOP_RESET_MODE) == 0) {
-        storage.setEStopResetMode(static_cast<EStopResetMode>(String(value).toInt()));
+        storage.setEStopResetMode(static_cast<EStopResetMode>(valueAsInt()));
     } else if (strcmp(key, NVS_KEYS::SETTING_BOARD_COUNT) == 0) {
-        storage.setBoardCount(static_cast<uint8_t>(String(value).toInt()));
+        storage.setBoardCount(static_cast<uint8_t>(valueAsInt()));
     } else if (strcmp(key, NVS_KEYS::SETTING_CONTINUITY_LO_GOOD) == 0) {
-        storage.setContinuityThresholds(String(value).toFloat(), storage.getContinuityHiGood(), storage.getContinuityLoOpen());
+        storage.setContinuityThresholds(valueAsFloat(), storage.getContinuityHiGood(), storage.getContinuityLoOpen());
     } else if (strcmp(key, NVS_KEYS::SETTING_CONTINUITY_HI_GOOD) == 0) {
-        storage.setContinuityThresholds(storage.getContinuityLoGood(), String(value).toFloat(), storage.getContinuityLoOpen());
+        storage.setContinuityThresholds(storage.getContinuityLoGood(), valueAsFloat(), storage.getContinuityLoOpen());
     } else if (strcmp(key, NVS_KEYS::SETTING_CONTINUITY_LO_OPEN) == 0) {
-        storage.setContinuityThresholds(storage.getContinuityLoGood(), storage.getContinuityHiGood(), String(value).toFloat());
+        storage.setContinuityThresholds(storage.getContinuityLoGood(), storage.getContinuityHiGood(), valueAsFloat());
     } else {
-        storage.saveSetting(key, String(value));
+        if (value.is<const char*>()) {
+            storage.saveSetting(key, String(value.as<const char*>()));
+        } else if (value.is<bool>()) {
+            storage.saveSetting(key, value.as<bool>());
+        } else if (value.is<float>() || value.is<double>()) {
+            storage.saveSetting(key, value.as<float>());
+        } else {
+            storage.saveSetting(key, valueAsInt());
+        }
     }
 
-    broadcastFullState();
+    markStateDirty();
+}
+
+void WebSocketHandler::handleBuilderSaveCommand(uint32_t clientId, const char* data) {
+    if (clientId != controllerClientId) {
+        broadcastError("UNAUTHORIZED", "Only controller can save builder data");
+        return;
+    }
+
+    DynamicJsonDocument doc(24576);
+    DeserializationError error = deserializeJson(doc, data);
+    if (error) {
+        broadcastError("INVALID_JSON", "Builder save payload is invalid");
+        return;
+    }
+
+    if (doc.containsKey("zones") && doc["zones"].is<JsonArray>()) {
+        JsonArray zones = doc["zones"].as<JsonArray>();
+        for (JsonObject zone : zones) {
+            uint8_t zoneId = static_cast<uint8_t>(zone["id"] | 255);
+            if (zoneId >= MAX_ZONES) {
+                continue;
+            }
+
+            // Batch-write all provided fields in one NVS transaction.
+            String desc    = zone.containsKey("description") ? zone["description"].as<String>() : storage.getZoneDescription(zoneId);
+            float  time    = zone.containsKey("time")        ? zone["time"].as<float>()          : storage.getZoneTime(zoneId);
+            bool   enabled = zone.containsKey("enabled")     ? zone["enabled"].as<bool>()        : storage.isZoneEnabled(zoneId);
+            uint8_t grp    = zone.containsKey("group")       ? (uint8_t)zone["group"].as<int>()  : storage.getZoneGroup(zoneId);
+            uint8_t ord    = zone.containsKey("order")       ? (uint8_t)zone["order"].as<int>()  : storage.getZoneOrder(zoneId);
+
+            storage.setZoneBatch(zoneId, desc, time, enabled, grp, ord);
+        }
+    }
+
+    if (doc.containsKey("auxNames") && doc["auxNames"].is<JsonArray>()) {
+        JsonArray auxNames = doc["auxNames"].as<JsonArray>();
+        if (auxNames.size() >= 2) {
+            storage.setAuxRelayName(0, auxNames[0].as<String>());
+            storage.setAuxRelayName(1, auxNames[1].as<String>());
+        }
+    }
+
+    markStateDirty();
 }
 
 void WebSocketHandler::handleAuxNameCommand(uint32_t clientId, const char* data) {
+    if (clientId != controllerClientId) {
+        broadcastError("UNAUTHORIZED", "Only controller can rename auxiliary relays");
+        return;
+    }
+
     StaticJsonDocument<256> doc;
     deserializeJson(doc, data);
     
@@ -682,10 +1026,15 @@ void WebSocketHandler::handleAuxNameCommand(uint32_t clientId, const char* data)
     const char* name = doc["name"] | "";
 
     storage.setAuxRelayName(relay, name);
-    broadcastFullState();
+    markStateDirty();
 }
 
 void WebSocketHandler::handleApConfigCommand(uint32_t clientId, const char* data) {
+    if (clientId != controllerClientId) {
+        broadcastError("UNAUTHORIZED", "Only controller can update AP credentials");
+        return;
+    }
+
     StaticJsonDocument<256> doc;
     deserializeJson(doc, data);
 
@@ -693,16 +1042,46 @@ void WebSocketHandler::handleApConfigCommand(uint32_t clientId, const char* data
     const char* pass = doc["pass"] | DEFAULT_AP_PASSWORD;
 
     storage.setApCredentials(ssid, pass);
-    broadcastFullState();
+    markStateDirty();
 }
 
 void WebSocketHandler::handleForgetWiFiCommand(uint32_t clientId) {
+    if (clientId != controllerClientId) {
+        broadcastError("UNAUTHORIZED", "Only controller can forget WiFi");
+        return;
+    }
+
     wifiManager.forgetNetwork();
     broadcastWiFiStatus();
-    broadcastFullState();
+    markStateDirty();
+}
+
+void WebSocketHandler::handleWiFiScanCommand(uint32_t clientId) {
+    (void)clientId;
+    int count = WiFi.scanNetworks(false, true);
+
+    DynamicJsonDocument doc(4096);
+    doc["type"] = "wifi_scan_results";
+    JsonArray networks = doc.createNestedArray("networks");
+
+    for (int i = 0; i < count; i++) {
+        JsonObject entry = networks.createNestedObject();
+        entry["ssid"] = WiFi.SSID(i);
+        entry["rssi"] = WiFi.RSSI(i);
+        entry["secure"] = (WiFi.encryptionType(i) != WIFI_AUTH_OPEN);
+    }
+
+    String json;
+    serializeJson(doc, json);
+    ws.textAll(json);
 }
 
 void WebSocketHandler::handleWiFiConnectCommand(uint32_t clientId, const char* data) {
+    if (clientId != controllerClientId) {
+        broadcastError("UNAUTHORIZED", "Only controller can connect WiFi");
+        return;
+    }
+
     StaticJsonDocument<256> doc;
     deserializeJson(doc, data);
     
@@ -717,10 +1096,15 @@ void WebSocketHandler::handleWiFiConnectCommand(uint32_t clientId, const char* d
     Serial.printf("[WiFi] WiFi connect command received: ssid=%s\n", ssid);
     wifiManager.scheduleConnect(ssid, pass);
     delay(50);
-    broadcastFullState();  // Broadcast after connection attempt has begun
+    markStateDirty();  // Queue full state after connection attempt has begun
 }
 
 void WebSocketHandler::handleRelayTestCommand(uint32_t clientId, const char* data) {
+    if (clientId != controllerClientId) {
+        broadcastError("UNAUTHORIZED", "Only controller can run relay test");
+        return;
+    }
+
     if (!relayManager.isMasterArmed()) {
         broadcastError("NOT_ARMED", "System must be armed for relay test");
         return;
@@ -762,7 +1146,22 @@ void WebSocketHandler::handleClientHello(uint32_t clientId, const char* data) {
             }
             removeViewer(clientId);
             controllerClientId = clientId;
+            controllerVacantSinceMs = 0;
             Serial.printf("[WebSocketHandler] Client %u reclaimed CONTROLLER role via lock\n", clientId);
+            broadcastRoleAssignment();
+            broadcastFullState();
+            return;
+        }
+    }
+
+    if (controllerRoleLocked && controllerClientId == 0 && controllerOwnerKey.length() > 0 && controllerOwnerKey != key) {
+        uint32_t now = millis();
+        if (controllerVacantSinceMs != 0 && now - controllerVacantSinceMs >= ROLE_LOCK_RECLAIM_TIMEOUT_MS) {
+            removeViewer(clientId);
+            controllerClientId = clientId;
+            controllerOwnerKey = key;
+            controllerVacantSinceMs = 0;
+            Serial.printf("[WebSocketHandler] Controller lock timeout elapsed, client %u claimed CONTROLLER role\n", clientId);
             broadcastRoleAssignment();
             broadcastFullState();
             return;
@@ -772,6 +1171,7 @@ void WebSocketHandler::handleClientHello(uint32_t clientId, const char* data) {
     if (controllerClientId == 0 && !controllerRoleLocked) {
         removeViewer(clientId);
         controllerClientId = clientId;
+        controllerVacantSinceMs = 0;
         Serial.printf("[WebSocketHandler] Client %u became CONTROLLER (lock disabled)\n", clientId);
         broadcastRoleAssignment();
         broadcastFullState();
@@ -798,6 +1198,8 @@ void WebSocketHandler::handleRoleLockCommand(uint32_t clientId, const char* data
         if (controllerKey.length() > 0) {
             controllerOwnerKey = controllerKey;
         }
+    } else {
+        controllerVacantSinceMs = 0;
     }
 
     Serial.printf("[WebSocketHandler] Controller role lock set to %s\n", controllerRoleLocked ? "LOCKED" : "UNLOCKED");
@@ -849,15 +1251,60 @@ void WebSocketHandler::advanceRelayTest() {
 }
 
 void WebSocketHandler::handleImportShowCommand(uint32_t clientId, const char* data) {
+    if (clientId != controllerClientId) {
+        broadcastError("UNAUTHORIZED", "Only controller can import show data");
+        return;
+    }
+
     StaticJsonDocument<8192> doc;
-    deserializeJson(doc, data);
+    DeserializationError error = deserializeJson(doc, data);
+    if (error) {
+        broadcastError("INVALID_JSON", "Import payload is not valid JSON");
+        return;
+    }
     
     if (doc.containsKey("data")) {
         String jsonData;
         serializeJson(doc["data"], jsonData);
-        storage.importShowJson(jsonData);
+        if (!storage.importShowJson(jsonData)) {
+            broadcastError("IMPORT_FAILED", "Unable to import show data");
+            return;
+        }
         broadcastFullState();
+        return;
     }
+
+    broadcastError("INVALID_IMPORT", "Missing import data payload");
+}
+
+void WebSocketHandler::handleExportShowCommand(uint32_t clientId) {
+    if (clientId != controllerClientId) {
+        broadcastError("UNAUTHORIZED", "Only controller can export show data");
+        return;
+    }
+
+    String jsonData = storage.exportShowJson();
+    DynamicJsonDocument doc(8448);
+    doc["type"] = "export_show";
+    doc["dataRaw"] = jsonData;
+
+    String payload;
+    serializeJson(doc, payload);
+    AsyncWebSocketClient* targetClient = ws.client(clientId);
+    if (targetClient) {
+        targetClient->text(payload);
+    }
+}
+
+void WebSocketHandler::handleClearAllCommand(uint32_t clientId) {
+    if (clientId != controllerClientId) {
+        broadcastError("UNAUTHORIZED", "Only controller can clear show data");
+        return;
+    }
+
+    storage.clearAllZones();
+
+    broadcastFullState();
 }
 
 void WebSocketHandler::stopRelayTest(bool aborted) {
