@@ -1,17 +1,161 @@
 #include "storage.h"
 #include <ArduinoJson.h>
 
+// Path for zone persistence; lives in the LittleFS filesystem alongside the UI assets.
+static const char* const ZONES_FILE_PATH = "/zones.json";
+
 StorageManager storage;
 
-StorageManager::StorageManager() {
+StorageManager::StorageManager() : zoneCacheLoaded(false) {
+    initZoneDefaults();
 }
 
 void StorageManager::begin() {
-    // Preferences will auto-initialize on first use
+    Preferences prefs;
+    const uint16_t schemaVersion = 2;
+
+    // Seed defaults once so read paths don't repeatedly hit missing-key lookups.
+    prefs.begin(NVS_KEYS::NS_WIFI, false);
+    if (!prefs.isKey(NVS_KEYS::WIFI_AP_SSID)) prefs.putString(NVS_KEYS::WIFI_AP_SSID, DEFAULT_AP_SSID);
+    if (!prefs.isKey(NVS_KEYS::WIFI_AP_PASS)) prefs.putString(NVS_KEYS::WIFI_AP_PASS, DEFAULT_AP_PASSWORD);
+    if (!prefs.isKey(NVS_KEYS::WIFI_CLIENT_SSID)) prefs.putString(NVS_KEYS::WIFI_CLIENT_SSID, "");
+    if (!prefs.isKey(NVS_KEYS::WIFI_CLIENT_PASS)) prefs.putString(NVS_KEYS::WIFI_CLIENT_PASS, "");
+    prefs.end();
+
+    prefs.begin(NVS_KEYS::NS_SETTINGS, false);
+    uint16_t currentSchema = prefs.getUShort("schema_ver", 0);
+    bool needsMigration = currentSchema < schemaVersion;
+    if (!prefs.isKey(NVS_KEYS::SETTING_IGNITER_DURATION)) prefs.putUShort(NVS_KEYS::SETTING_IGNITER_DURATION, DEFAULT_IGNITER_DURATION_MS);
+    if (!prefs.isKey(NVS_KEYS::SETTING_AUTO_DELAY)) prefs.putUChar(NVS_KEYS::SETTING_AUTO_DELAY, DEFAULT_AUTO_DELAY_SEC);
+    if (!prefs.isKey(NVS_KEYS::SETTING_ABORT_ON_DISCONNECT)) prefs.putBool(NVS_KEYS::SETTING_ABORT_ON_DISCONNECT, DEFAULT_ABORT_ON_DISCONNECT);
+    if (!prefs.isKey(NVS_KEYS::SETTING_ESTOP_RESET_MODE)) prefs.putUChar(NVS_KEYS::SETTING_ESTOP_RESET_MODE, DEFAULT_ESTOP_RESET_MODE);
+    if (!prefs.isKey(NVS_KEYS::SETTING_BOARD_COUNT)) prefs.putUChar(NVS_KEYS::SETTING_BOARD_COUNT, DEFAULT_BOARD_COUNT);
+    if (!prefs.isKey(NVS_KEYS::SETTING_CONTINUITY_LO_GOOD)) prefs.putFloat(NVS_KEYS::SETTING_CONTINUITY_LO_GOOD, DEFAULT_CONTINUITY_LOW_GOOD);
+    if (!prefs.isKey(NVS_KEYS::SETTING_CONTINUITY_HI_GOOD)) prefs.putFloat(NVS_KEYS::SETTING_CONTINUITY_HI_GOOD, DEFAULT_CONTINUITY_HI_GOOD);
+    if (!prefs.isKey(NVS_KEYS::SETTING_CONTINUITY_LO_OPEN)) prefs.putFloat(NVS_KEYS::SETTING_CONTINUITY_LO_OPEN, DEFAULT_CONTINUITY_LOW_OPEN_CIRCUIT);
+    prefs.putUShort("schema_ver", schemaVersion);
+    prefs.end();
+
+    if (needsMigration) {
+        // Reclaim NVS entries from older layouts that can exhaust space.
+        prefs.begin(NVS_KEYS::NS_ZONES, false);
+        prefs.clear();
+        prefs.end();
+
+        prefs.begin(NVS_KEYS::NS_GROUPS, false);
+        prefs.clear();
+        prefs.end();
+    }
+
+    prefs.begin(NVS_KEYS::NS_AUX, false);
+    if (!prefs.isKey(NVS_KEYS::AUX_RELAY_1_NAME)) prefs.putString(NVS_KEYS::AUX_RELAY_1_NAME, "Lights");
+    if (!prefs.isKey(NVS_KEYS::AUX_RELAY_2_NAME)) prefs.putString(NVS_KEYS::AUX_RELAY_2_NAME, "Music");
+    prefs.end();
+
+    // Clear now-unused NVS zone namespace to reclaim flash space.
+    prefs.begin(NVS_KEYS::NS_ZONES, false);
+    prefs.clear();
+    prefs.end();
+
+    // Legacy namespace from removed standalone group editor.
+    prefs.begin(NVS_KEYS::NS_GROUPS, false);
+    prefs.clear();
+    prefs.end();
+
+    // Mount LittleFS (idempotent if already mounted by websocket_handler).
+    if (!LittleFS.begin()) {
+        Serial.println("[Storage] LittleFS mount failed; zone data will be in-memory only");
+    } else {
+        loadZonesFromFile();
+    }
 }
 
 void StorageManager::loadAll() {
-    // This is mainly a placeholder; getters are lazy-loaded from NVS on demand
+    if (!zoneCacheLoaded) {
+        loadZonesFromFile();
+    }
+}
+
+void StorageManager::initZoneDefaults() {
+    for (uint8_t i = 0; i < MAX_ZONES; i++) {
+        zoneCache[i].description = "";
+        zoneCache[i].time        = 0.0f;
+        zoneCache[i].enabled     = true;
+        zoneCache[i].group       = 0;
+        zoneCache[i].order       = i;
+    }
+}
+
+bool StorageManager::loadZonesFromFile() {
+    File f = LittleFS.open(ZONES_FILE_PATH, "r");
+    if (!f) {
+        Serial.println("[Storage] zones.json not found; using defaults");
+        zoneCacheLoaded = true;
+        return false;
+    }
+
+    size_t size = f.size();
+    if (size == 0 || size > 8192) {
+        f.close();
+        Serial.printf("[Storage] zones.json unexpected size %u; using defaults\n", size);
+        zoneCacheLoaded = true;
+        return false;
+    }
+
+    DynamicJsonDocument doc(8192);
+    DeserializationError err = deserializeJson(doc, f);
+    f.close();
+
+    if (err || !doc.is<JsonArray>()) {
+        Serial.printf("[Storage] zones.json parse error: %s\n", err.c_str());
+        zoneCacheLoaded = true;
+        return false;
+    }
+
+    JsonArray arr = doc.as<JsonArray>();
+    for (JsonObject zone : arr) {
+        uint8_t idx = zone["i"] | 255;
+        if (idx >= MAX_ZONES) continue;
+        zoneCache[idx].description = zone["d"].as<String>();
+        zoneCache[idx].time        = zone["t"] | 0.0f;
+        zoneCache[idx].enabled     = zone["e"] | true;
+        zoneCache[idx].group       = zone["g"] | (uint8_t)0;
+        zoneCache[idx].order       = zone["o"] | idx;
+    }
+
+    zoneCacheLoaded = true;
+    Serial.println("[Storage] zones.json loaded");
+    return true;
+}
+
+bool StorageManager::saveZonesToFile() {
+    DynamicJsonDocument doc(8192);
+    JsonArray arr = doc.to<JsonArray>();
+
+    for (uint8_t i = 0; i < MAX_ZONES; i++) {
+        const ZoneData& z = zoneCache[i];
+        // Only write non-default zones to save space; always write if group/order/desc set.
+        if (z.description.length() == 0 && z.time == 0.0f && z.group == 0 &&
+            z.order == i && z.enabled) {
+            continue;
+        }
+        JsonObject entry = arr.createNestedObject();
+        entry["i"] = i;
+        entry["d"] = z.description;
+        entry["t"] = z.time;
+        entry["e"] = z.enabled;
+        entry["g"] = z.group;
+        entry["o"] = z.order;
+    }
+
+    File f = LittleFS.open(ZONES_FILE_PATH, "w");
+    if (!f) {
+        Serial.println("[Storage] Failed to open zones.json for write");
+        return false;
+    }
+    serializeJson(doc, f);
+    f.close();
+    return true;
 }
 
 String StorageManager::makeZoneKey(const char* prefix, uint8_t zoneIdx) {
@@ -21,18 +165,12 @@ String StorageManager::makeZoneKey(const char* prefix, uint8_t zoneIdx) {
     return key;
 }
 
-String StorageManager::makeGroupKey(const char* prefix, uint8_t groupIdx) {
-    String key = String(prefix);
-    if (groupIdx < 10) key += "0";
-    key += String(groupIdx);
-    return key;
-}
-
 // ============================================================================
 // WiFi
 // ============================================================================
 
 String StorageManager::getApSSID() {
+    Preferences prefs;
     prefs.begin(NVS_KEYS::NS_WIFI, true);
     String ssid = prefs.getString(NVS_KEYS::WIFI_AP_SSID, DEFAULT_AP_SSID);
     prefs.end();
@@ -40,6 +178,7 @@ String StorageManager::getApSSID() {
 }
 
 String StorageManager::getApPassword() {
+    Preferences prefs;
     prefs.begin(NVS_KEYS::NS_WIFI, true);
     String pass = prefs.getString(NVS_KEYS::WIFI_AP_PASS, DEFAULT_AP_PASSWORD);
     prefs.end();
@@ -47,6 +186,7 @@ String StorageManager::getApPassword() {
 }
 
 String StorageManager::getClientSSID() {
+    Preferences prefs;
     prefs.begin(NVS_KEYS::NS_WIFI, true);
     String ssid = prefs.getString(NVS_KEYS::WIFI_CLIENT_SSID, "");
     prefs.end();
@@ -54,6 +194,7 @@ String StorageManager::getClientSSID() {
 }
 
 String StorageManager::getClientPassword() {
+    Preferences prefs;
     prefs.begin(NVS_KEYS::NS_WIFI, true);
     String pass = prefs.getString(NVS_KEYS::WIFI_CLIENT_PASS, "");
     prefs.end();
@@ -61,6 +202,7 @@ String StorageManager::getClientPassword() {
 }
 
 void StorageManager::setApCredentials(const String& ssid, const String& pass) {
+    Preferences prefs;
     prefs.begin(NVS_KEYS::NS_WIFI, false);
     prefs.putString(NVS_KEYS::WIFI_AP_SSID, ssid);
     prefs.putString(NVS_KEYS::WIFI_AP_PASS, pass);
@@ -68,6 +210,7 @@ void StorageManager::setApCredentials(const String& ssid, const String& pass) {
 }
 
 void StorageManager::setClientCredentials(const String& ssid, const String& pass) {
+    Preferences prefs;
     prefs.begin(NVS_KEYS::NS_WIFI, false);
     prefs.putString(NVS_KEYS::WIFI_CLIENT_SSID, ssid);
     prefs.putString(NVS_KEYS::WIFI_CLIENT_PASS, pass);
@@ -75,135 +218,77 @@ void StorageManager::setClientCredentials(const String& ssid, const String& pass
 }
 
 // ============================================================================
-// Zones
+// Zones  — backed by in-memory cache + LittleFS; no NVS usage
 // ============================================================================
 
 String StorageManager::getZoneDescription(uint8_t zoneIdx) {
-    prefs.begin(NVS_KEYS::NS_ZONES, true);
-    String key = makeZoneKey(NVS_KEYS::ZONE_DESC_PREFIX, zoneIdx);
-    String desc = prefs.getString(key.c_str(), "");
-    prefs.end();
-    return desc;
+    if (zoneIdx >= MAX_ZONES) return "";
+    return zoneCache[zoneIdx].description;
 }
 
 float StorageManager::getZoneTime(uint8_t zoneIdx) {
-    prefs.begin(NVS_KEYS::NS_ZONES, true);
-    String key = makeZoneKey(NVS_KEYS::ZONE_TIME_PREFIX, zoneIdx);
-    float time = prefs.getFloat(key.c_str(), 0.0f);
-    prefs.end();
-    return time;
+    if (zoneIdx >= MAX_ZONES) return 0.0f;
+    return zoneCache[zoneIdx].time;
 }
 
 bool StorageManager::isZoneEnabled(uint8_t zoneIdx) {
-    prefs.begin(NVS_KEYS::NS_ZONES, true);
-    String key = makeZoneKey(NVS_KEYS::ZONE_ENABLED_PREFIX, zoneIdx);
-    bool enabled = prefs.getBool(key.c_str(), true);
-    prefs.end();
-    return enabled;
+    if (zoneIdx >= MAX_ZONES) return true;
+    return zoneCache[zoneIdx].enabled;
 }
 
 uint8_t StorageManager::getZoneGroup(uint8_t zoneIdx) {
-    prefs.begin(NVS_KEYS::NS_ZONES, true);
-    String key = makeZoneKey(NVS_KEYS::ZONE_GROUP_PREFIX, zoneIdx);
-    uint8_t grp = prefs.getUChar(key.c_str(), 0);
-    prefs.end();
-    return grp;
+    if (zoneIdx >= MAX_ZONES) return 0;
+    return zoneCache[zoneIdx].group;
 }
 
 uint8_t StorageManager::getZoneOrder(uint8_t zoneIdx) {
-    prefs.begin(NVS_KEYS::NS_ZONES, true);
-    String key = makeZoneKey(NVS_KEYS::ZONE_ORDER_PREFIX, zoneIdx);
-    uint8_t ord = prefs.getUChar(key.c_str(), zoneIdx);
-    prefs.end();
-    return ord;
+    if (zoneIdx >= MAX_ZONES) return zoneIdx;
+    return zoneCache[zoneIdx].order;
 }
 
 void StorageManager::setZoneDescription(uint8_t zoneIdx, const String& desc) {
-    prefs.begin(NVS_KEYS::NS_ZONES, false);
-    String key = makeZoneKey(NVS_KEYS::ZONE_DESC_PREFIX, zoneIdx);
-    prefs.putString(key.c_str(), desc);
-    prefs.end();
+    if (zoneIdx >= MAX_ZONES) return;
+    zoneCache[zoneIdx].description = desc;
+    saveZonesToFile();
 }
 
 void StorageManager::setZoneTime(uint8_t zoneIdx, float timeSeconds) {
-    prefs.begin(NVS_KEYS::NS_ZONES, false);
-    String key = makeZoneKey(NVS_KEYS::ZONE_TIME_PREFIX, zoneIdx);
-    prefs.putFloat(key.c_str(), timeSeconds);
-    prefs.end();
+    if (zoneIdx >= MAX_ZONES) return;
+    zoneCache[zoneIdx].time = timeSeconds;
+    saveZonesToFile();
 }
 
 void StorageManager::setZoneEnabled(uint8_t zoneIdx, bool enabled) {
-    prefs.begin(NVS_KEYS::NS_ZONES, false);
-    String key = makeZoneKey(NVS_KEYS::ZONE_ENABLED_PREFIX, zoneIdx);
-    prefs.putBool(key.c_str(), enabled);
-    prefs.end();
+    if (zoneIdx >= MAX_ZONES) return;
+    zoneCache[zoneIdx].enabled = enabled;
+    saveZonesToFile();
 }
 
 void StorageManager::setZoneGroup(uint8_t zoneIdx, uint8_t groupIdx) {
-    prefs.begin(NVS_KEYS::NS_ZONES, false);
-    String key = makeZoneKey(NVS_KEYS::ZONE_GROUP_PREFIX, zoneIdx);
-    prefs.putUChar(key.c_str(), groupIdx);
-    prefs.end();
+    if (zoneIdx >= MAX_ZONES) return;
+    zoneCache[zoneIdx].group = groupIdx;
+    saveZonesToFile();
 }
 
 void StorageManager::setZoneOrder(uint8_t zoneIdx, uint8_t order) {
-    prefs.begin(NVS_KEYS::NS_ZONES, false);
-    String key = makeZoneKey(NVS_KEYS::ZONE_ORDER_PREFIX, zoneIdx);
-    prefs.putUChar(key.c_str(), order);
-    prefs.end();
+    if (zoneIdx >= MAX_ZONES) return;
+    zoneCache[zoneIdx].order = order;
+    saveZonesToFile();
+}
+
+void StorageManager::setZoneBatch(uint8_t zoneIdx, const String& desc, float time,
+                                   bool enabled, uint8_t group, uint8_t order) {
+    if (zoneIdx >= MAX_ZONES) return;
+    zoneCache[zoneIdx].description = desc;
+    zoneCache[zoneIdx].time        = time;
+    zoneCache[zoneIdx].enabled     = enabled;
+    zoneCache[zoneIdx].group       = group;
+    zoneCache[zoneIdx].order       = order;
+    saveZonesToFile();
 }
 
 void StorageManager::saveZone(uint8_t zoneIdx) {
-    // Already saved via individual setters; this is a no-op or batch save if needed
-}
-
-// ============================================================================
-// Groups
-// ============================================================================
-
-String StorageManager::getGroupName(uint8_t groupIdx) {
-    prefs.begin(NVS_KEYS::NS_GROUPS, true);
-    String key = makeGroupKey(NVS_KEYS::GROUP_NAME_PREFIX, groupIdx);
-    String name = prefs.getString(key.c_str(), "");
-    prefs.end();
-    return name;
-}
-
-String StorageManager::getGroupMembers(uint8_t groupIdx) {
-    prefs.begin(NVS_KEYS::NS_GROUPS, true);
-    String key = makeGroupKey(NVS_KEYS::GROUP_MEMBERS_PREFIX, groupIdx);
-    String members = prefs.getString(key.c_str(), "");
-    prefs.end();
-    return members;
-}
-
-uint8_t StorageManager::getGroupOrder(uint8_t groupIdx) {
-    prefs.begin(NVS_KEYS::NS_GROUPS, true);
-    String key = makeGroupKey(NVS_KEYS::GROUP_ORDER_PREFIX, groupIdx);
-    uint8_t ord = prefs.getUChar(key.c_str(), groupIdx);
-    prefs.end();
-    return ord;
-}
-
-void StorageManager::setGroupName(uint8_t groupIdx, const String& name) {
-    prefs.begin(NVS_KEYS::NS_GROUPS, false);
-    String key = makeGroupKey(NVS_KEYS::GROUP_NAME_PREFIX, groupIdx);
-    prefs.putString(key.c_str(), name);
-    prefs.end();
-}
-
-void StorageManager::setGroupMembers(uint8_t groupIdx, const String& members) {
-    prefs.begin(NVS_KEYS::NS_GROUPS, false);
-    String key = makeGroupKey(NVS_KEYS::GROUP_MEMBERS_PREFIX, groupIdx);
-    prefs.putString(key.c_str(), members);
-    prefs.end();
-}
-
-void StorageManager::setGroupOrder(uint8_t groupIdx, uint8_t order) {
-    prefs.begin(NVS_KEYS::NS_GROUPS, false);
-    String key = makeGroupKey(NVS_KEYS::GROUP_ORDER_PREFIX, groupIdx);
-    prefs.putUChar(key.c_str(), order);
-    prefs.end();
+    (void)zoneIdx;  // all saves go through setZoneBatch or individual setters above
 }
 
 // ============================================================================
@@ -211,6 +296,7 @@ void StorageManager::setGroupOrder(uint8_t groupIdx, uint8_t order) {
 // ============================================================================
 
 uint16_t StorageManager::getIgniterDuration() {
+    Preferences prefs;
     prefs.begin(NVS_KEYS::NS_SETTINGS, true);
     uint16_t dur = prefs.getUShort(NVS_KEYS::SETTING_IGNITER_DURATION, DEFAULT_IGNITER_DURATION_MS);
     prefs.end();
@@ -218,6 +304,7 @@ uint16_t StorageManager::getIgniterDuration() {
 }
 
 uint8_t StorageManager::getAutoDelay() {
+    Preferences prefs;
     prefs.begin(NVS_KEYS::NS_SETTINGS, true);
     uint8_t delay = prefs.getUChar(NVS_KEYS::SETTING_AUTO_DELAY, DEFAULT_AUTO_DELAY_SEC);
     prefs.end();
@@ -225,6 +312,7 @@ uint8_t StorageManager::getAutoDelay() {
 }
 
 bool StorageManager::getAbortOnDisconnect() {
+    Preferences prefs;
     prefs.begin(NVS_KEYS::NS_SETTINGS, true);
     bool flag = prefs.getBool(NVS_KEYS::SETTING_ABORT_ON_DISCONNECT, DEFAULT_ABORT_ON_DISCONNECT);
     prefs.end();
@@ -232,6 +320,7 @@ bool StorageManager::getAbortOnDisconnect() {
 }
 
 EStopResetMode StorageManager::getEStopResetMode() {
+    Preferences prefs;
     prefs.begin(NVS_KEYS::NS_SETTINGS, true);
     uint8_t mode = prefs.getUChar(NVS_KEYS::SETTING_ESTOP_RESET_MODE, DEFAULT_ESTOP_RESET_MODE);
     prefs.end();
@@ -239,6 +328,7 @@ EStopResetMode StorageManager::getEStopResetMode() {
 }
 
 uint8_t StorageManager::getBoardCount() {
+    Preferences prefs;
     prefs.begin(NVS_KEYS::NS_SETTINGS, true);
     uint8_t cnt = prefs.getUChar(NVS_KEYS::SETTING_BOARD_COUNT, DEFAULT_BOARD_COUNT);
     prefs.end();
@@ -246,6 +336,7 @@ uint8_t StorageManager::getBoardCount() {
 }
 
 float StorageManager::getContinuityLoGood() {
+    Preferences prefs;
     prefs.begin(NVS_KEYS::NS_SETTINGS, true);
     float val = prefs.getFloat(NVS_KEYS::SETTING_CONTINUITY_LO_GOOD, DEFAULT_CONTINUITY_LOW_GOOD);
     prefs.end();
@@ -253,6 +344,7 @@ float StorageManager::getContinuityLoGood() {
 }
 
 float StorageManager::getContinuityHiGood() {
+    Preferences prefs;
     prefs.begin(NVS_KEYS::NS_SETTINGS, true);
     float val = prefs.getFloat(NVS_KEYS::SETTING_CONTINUITY_HI_GOOD, DEFAULT_CONTINUITY_HI_GOOD);
     prefs.end();
@@ -260,6 +352,7 @@ float StorageManager::getContinuityHiGood() {
 }
 
 float StorageManager::getContinuityLoOpen() {
+    Preferences prefs;
     prefs.begin(NVS_KEYS::NS_SETTINGS, true);
     float val = prefs.getFloat(NVS_KEYS::SETTING_CONTINUITY_LO_OPEN, DEFAULT_CONTINUITY_LOW_OPEN_CIRCUIT);
     prefs.end();
@@ -267,36 +360,42 @@ float StorageManager::getContinuityLoOpen() {
 }
 
 void StorageManager::setIgniterDuration(uint16_t ms) {
+    Preferences prefs;
     prefs.begin(NVS_KEYS::NS_SETTINGS, false);
     prefs.putUShort(NVS_KEYS::SETTING_IGNITER_DURATION, ms);
     prefs.end();
 }
 
 void StorageManager::setAutoDelay(uint8_t sec) {
+    Preferences prefs;
     prefs.begin(NVS_KEYS::NS_SETTINGS, false);
     prefs.putUChar(NVS_KEYS::SETTING_AUTO_DELAY, sec);
     prefs.end();
 }
 
 void StorageManager::setAbortOnDisconnect(bool flag) {
+    Preferences prefs;
     prefs.begin(NVS_KEYS::NS_SETTINGS, false);
     prefs.putBool(NVS_KEYS::SETTING_ABORT_ON_DISCONNECT, flag);
     prefs.end();
 }
 
 void StorageManager::setEStopResetMode(EStopResetMode mode) {
+    Preferences prefs;
     prefs.begin(NVS_KEYS::NS_SETTINGS, false);
     prefs.putUChar(NVS_KEYS::SETTING_ESTOP_RESET_MODE, static_cast<uint8_t>(mode));
     prefs.end();
 }
 
 void StorageManager::setBoardCount(uint8_t count) {
+    Preferences prefs;
     prefs.begin(NVS_KEYS::NS_SETTINGS, false);
     prefs.putUChar(NVS_KEYS::SETTING_BOARD_COUNT, count);
     prefs.end();
 }
 
 void StorageManager::setContinuityThresholds(float loGood, float hiGood, float loOpen) {
+    Preferences prefs;
     prefs.begin(NVS_KEYS::NS_SETTINGS, false);
     prefs.putFloat(NVS_KEYS::SETTING_CONTINUITY_LO_GOOD, loGood);
     prefs.putFloat(NVS_KEYS::SETTING_CONTINUITY_HI_GOOD, hiGood);
@@ -309,6 +408,7 @@ void StorageManager::setContinuityThresholds(float loGood, float hiGood, float l
 // ============================================================================
 
 String StorageManager::getAuxRelayName(uint8_t relayIdx) {
+    Preferences prefs;
     prefs.begin(NVS_KEYS::NS_AUX, true);
     const char* key = (relayIdx == 0) ? NVS_KEYS::AUX_RELAY_1_NAME : NVS_KEYS::AUX_RELAY_2_NAME;
     String name = prefs.getString(key, (relayIdx == 0) ? "Lights" : "Music");
@@ -317,6 +417,7 @@ String StorageManager::getAuxRelayName(uint8_t relayIdx) {
 }
 
 void StorageManager::setAuxRelayName(uint8_t relayIdx, const String& name) {
+    Preferences prefs;
     prefs.begin(NVS_KEYS::NS_AUX, false);
     const char* key = (relayIdx == 0) ? NVS_KEYS::AUX_RELAY_1_NAME : NVS_KEYS::AUX_RELAY_2_NAME;
     prefs.putString(key, name);
@@ -328,33 +429,24 @@ void StorageManager::setAuxRelayName(uint8_t relayIdx, const String& name) {
 // ============================================================================
 
 String StorageManager::exportShowJson() {
-    StaticJsonDocument<8192> doc;  // Adjust size if needed for 48 zones
-    
-    // Zones array
+    DynamicJsonDocument doc(8192);
+
     JsonArray zonesArray = doc.createNestedArray("zones");
     for (uint8_t i = 0; i < MAX_ZONES; i++) {
-        JsonObject zone = zonesArray.createNestedObject();
-        zone["index"] = i;
-        zone["description"] = getZoneDescription(i);
-        zone["time"] = getZoneTime(i);
-        zone["enabled"] = isZoneEnabled(i);
-        zone["group"] = getZoneGroup(i);
-        zone["order"] = getZoneOrder(i);
-    }
-    
-    // Groups array
-    JsonArray groupsArray = doc.createNestedArray("groups");
-    for (uint8_t i = 0; i < 16; i++) {  // Arbitrary max groups
-        String name = getGroupName(i);
-        if (name.length() > 0) {
-            JsonObject grp = groupsArray.createNestedObject();
-            grp["id"] = i;
-            grp["name"] = name;
-            grp["members"] = getGroupMembers(i);
-            grp["order"] = getGroupOrder(i);
+        const ZoneData& z = zoneCache[i];
+        if (z.description.length() == 0 && z.time == 0.0f && z.group == 0 &&
+            z.order == i && z.enabled) {
+            continue;  // skip unmodified default zones to keep export compact
         }
+        JsonObject zone = zonesArray.createNestedObject();
+        zone["index"]       = i;
+        zone["description"] = z.description;
+        zone["time"]        = z.time;
+        zone["enabled"]     = z.enabled;
+        zone["group"]       = z.group;
+        zone["order"]       = z.order;
     }
-    
+
     String jsonStr;
     serializeJson(doc, jsonStr);
     return jsonStr;
@@ -363,38 +455,27 @@ String StorageManager::exportShowJson() {
 bool StorageManager::importShowJson(const String& jsonStr) {
     StaticJsonDocument<8192> doc;
     DeserializationError error = deserializeJson(doc, jsonStr);
-    
+
     if (error) {
         Serial.printf("Import JSON parse error: %s\n", error.c_str());
         return false;
     }
-    
-    // Zones
+
+    // Update cache then persist once.
     if (doc.containsKey("zones")) {
         JsonArray zonesArray = doc["zones"];
         for (JsonObject zone : zonesArray) {
-            uint8_t idx = zone["index"];
-            if (idx < MAX_ZONES) {
-                if (zone.containsKey("description")) setZoneDescription(idx, zone["description"].as<String>());
-                if (zone.containsKey("time")) setZoneTime(idx, zone["time"]);
-                if (zone.containsKey("enabled")) setZoneEnabled(idx, zone["enabled"]);
-                if (zone.containsKey("group")) setZoneGroup(idx, zone["group"]);
-                if (zone.containsKey("order")) setZoneOrder(idx, zone["order"]);
-            }
+            uint8_t idx = zone["index"] | 255;
+            if (idx >= MAX_ZONES) continue;
+            if (zone.containsKey("description")) zoneCache[idx].description = zone["description"].as<String>();
+            if (zone.containsKey("time"))        zoneCache[idx].time        = zone["time"].as<float>();
+            if (zone.containsKey("enabled"))     zoneCache[idx].enabled     = zone["enabled"].as<bool>();
+            if (zone.containsKey("group"))       zoneCache[idx].group       = (uint8_t)zone["group"].as<int>();
+            if (zone.containsKey("order"))       zoneCache[idx].order       = (uint8_t)zone["order"].as<int>();
         }
+        saveZonesToFile();
     }
-    
-    // Groups
-    if (doc.containsKey("groups")) {
-        JsonArray groupsArray = doc["groups"];
-        for (JsonObject grp : groupsArray) {
-            uint8_t id = grp["id"];
-            if (grp.containsKey("name")) setGroupName(id, grp["name"].as<String>());
-            if (grp.containsKey("members")) setGroupMembers(id, grp["members"].as<String>());
-            if (grp.containsKey("order")) setGroupOrder(id, grp["order"]);
-        }
-    }
-    
+
     return true;
 }
 
@@ -403,59 +484,47 @@ bool StorageManager::importShowJson(const String& jsonStr) {
 // ============================================================================
 
 void StorageManager::clearAllZones() {
-    prefs.begin(NVS_KEYS::NS_ZONES, false);
-    for (uint8_t i = 0; i < MAX_ZONES; i++) {
-        prefs.remove(makeZoneKey(NVS_KEYS::ZONE_TIME_PREFIX, i).c_str());
-        prefs.remove(makeZoneKey(NVS_KEYS::ZONE_DESC_PREFIX, i).c_str());
-        prefs.remove(makeZoneKey(NVS_KEYS::ZONE_ENABLED_PREFIX, i).c_str());
-        prefs.remove(makeZoneKey(NVS_KEYS::ZONE_GROUP_PREFIX, i).c_str());
-        prefs.remove(makeZoneKey(NVS_KEYS::ZONE_ORDER_PREFIX, i).c_str());
-    }
-    prefs.end();
+    initZoneDefaults();
+    LittleFS.remove(ZONES_FILE_PATH);
 }
 
 void StorageManager::resetToDefaults() {
-    // Clear all namespaces
-    prefs.begin(NVS_KEYS::NS_WIFI, false);
-    prefs.clear();
-    prefs.end();
-    
-    prefs.begin(NVS_KEYS::NS_ZONES, false);
-    prefs.clear();
-    prefs.end();
-    
-    prefs.begin(NVS_KEYS::NS_GROUPS, false);
-    prefs.clear();
-    prefs.end();
-    
-    prefs.begin(NVS_KEYS::NS_SETTINGS, false);
-    prefs.clear();
-    prefs.end();
-    
-    prefs.begin(NVS_KEYS::NS_AUX, false);
-    prefs.clear();
-    prefs.end();
+    Preferences prefs;
+    // Clear all NVS namespaces.
+    prefs.begin(NVS_KEYS::NS_WIFI, false);     prefs.clear(); prefs.end();
+    prefs.begin(NVS_KEYS::NS_SETTINGS, false); prefs.clear(); prefs.end();
+    prefs.begin(NVS_KEYS::NS_AUX, false);      prefs.clear(); prefs.end();
+
+    // Remove LittleFS zone file and reset cache.
+    LittleFS.remove(ZONES_FILE_PATH);
+    initZoneDefaults();
+
+    begin();
 }
 
 void StorageManager::saveSetting(const char* key, const String& value) {
+    Preferences prefs;
     prefs.begin(NVS_KEYS::NS_SETTINGS, false);
     prefs.putString(key, value);
     prefs.end();
 }
 
 void StorageManager::saveSetting(const char* key, int value) {
+    Preferences prefs;
     prefs.begin(NVS_KEYS::NS_SETTINGS, false);
     prefs.putInt(key, value);
     prefs.end();
 }
 
 void StorageManager::saveSetting(const char* key, bool value) {
+    Preferences prefs;
     prefs.begin(NVS_KEYS::NS_SETTINGS, false);
     prefs.putBool(key, value);
     prefs.end();
 }
 
 void StorageManager::saveSetting(const char* key, float value) {
+    Preferences prefs;
     prefs.begin(NVS_KEYS::NS_SETTINGS, false);
     prefs.putFloat(key, value);
     prefs.end();

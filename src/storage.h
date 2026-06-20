@@ -3,8 +3,18 @@
 
 #include <Arduino.h>
 #include <Preferences.h>
+#include <LittleFS.h>
 #include <vector>
 #include "config.h"
+
+// Compact in-memory representation of a single zone.
+struct ZoneData {
+    String  description;
+    float   time;
+    bool    enabled;
+    uint8_t group;
+    uint8_t order;
+};
 
 class StorageManager {
 public:
@@ -41,15 +51,10 @@ public:
     void setZoneEnabled(uint8_t zoneIdx, bool enabled);
     void setZoneGroup(uint8_t zoneIdx, uint8_t groupIdx);
     void setZoneOrder(uint8_t zoneIdx, uint8_t order);
-    
-    // Getters - Groups
-    String getGroupName(uint8_t groupIdx);
-    String getGroupMembers(uint8_t groupIdx);  // Comma-separated zone indices
-    uint8_t getGroupOrder(uint8_t groupIdx);
-    
-    void setGroupName(uint8_t groupIdx, const String& name);
-    void setGroupMembers(uint8_t groupIdx, const String& members);  // Comma-separated
-    void setGroupOrder(uint8_t groupIdx, uint8_t order);
+
+    // Batch-writes all five zone fields in a single NVS open/close transaction.
+    void setZoneBatch(uint8_t zoneIdx, const String& desc, float time,
+                      bool enabled, uint8_t group, uint8_t order);
     
     // Getters - Settings
     uint16_t getIgniterDuration();
@@ -82,9 +87,17 @@ public:
     
 private:
     Preferences prefs;
-    
+
+    // Zone data is kept in a RAM cache and persisted as /zones.json on LittleFS.
+    // This avoids NVS exhaustion from 240+ individual zone keys.
+    ZoneData    zoneCache[MAX_ZONES];
+    bool        zoneCacheLoaded;
+
+    void initZoneDefaults();
+    bool loadZonesFromFile();
+    bool saveZonesToFile();
+
     String makeZoneKey(const char* prefix, uint8_t zoneIdx);
-    String makeGroupKey(const char* prefix, uint8_t groupIdx);
 };
 
 extern StorageManager storage;
