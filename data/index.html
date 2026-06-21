@@ -952,6 +952,7 @@
             }
 
             topBar.classList.toggle('mobile-estop-active', appState.estopActive);
+            topBar.classList.toggle('mobile-armed-layout', appState.masterArmed && !appState.estopActive);
             syncLayoutOffsets();
         }
 
