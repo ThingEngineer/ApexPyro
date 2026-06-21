@@ -784,6 +784,7 @@
             renderEStopButton();
             renderAuxButtons();
             renderEStopResetButton();
+            renderTopBarEmergencyLayout();
             renderStatusOverview();
             renderConnectionIndicator();
             renderShowZones();
@@ -885,6 +886,7 @@
             renderEStopButton();
             renderShowZones();
             renderEStopResetButton();
+            renderTopBarEmergencyLayout();
             renderStatusOverview();
             showToast('Emergency stop activated', 'error');
         }
@@ -908,6 +910,7 @@
             hydrateSettingsForm();
             renderRoleBadge();
             renderArmStatus();
+            renderTopBarEmergencyLayout();
             if (!builderDirty) {
                 renderBuilderZones();
             }
@@ -939,7 +942,17 @@
 
         function renderEStopButton() {
             const button = document.getElementById('eStopBtn');
-            button.style.display = appState.masterArmed ? 'inline-flex' : 'none';
+            button.style.display = (appState.masterArmed || appState.estopActive) ? 'inline-flex' : 'none';
+        }
+
+        function renderTopBarEmergencyLayout() {
+            const topBar = document.querySelector('.top-bar');
+            if (!topBar) {
+                return;
+            }
+
+            topBar.classList.toggle('mobile-estop-active', appState.estopActive);
+            syncLayoutOffsets();
         }
 
         function renderStatusOverview() {

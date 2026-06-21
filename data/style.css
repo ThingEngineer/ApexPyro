@@ -1552,6 +1552,28 @@ progress::-moz-progress-bar {
     flex: none;
   }
 
+  .top-bar.mobile-estop-active .nav-right {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .top-bar.mobile-estop-active .status-group {
+    width: 100%;
+  }
+
+  .top-bar.mobile-estop-active .btn-estop {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .top-bar.mobile-estop-active .btn-reset {
+    width: 100%;
+    justify-content: center;
+  }
+
   .nav-tabs {
     order: 3;
     flex: none;
