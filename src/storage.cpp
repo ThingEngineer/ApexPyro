@@ -453,7 +453,7 @@ String StorageManager::exportShowJson() {
 }
 
 bool StorageManager::importShowJson(const String& jsonStr) {
-    StaticJsonDocument<8192> doc;
+    DynamicJsonDocument doc(8192);
     DeserializationError error = deserializeJson(doc, jsonStr);
 
     if (error) {
@@ -461,19 +461,149 @@ bool StorageManager::importShowJson(const String& jsonStr) {
         return false;
     }
 
-    // Update cache then persist once.
-    if (doc.containsKey("zones")) {
-        JsonArray zonesArray = doc["zones"];
-        for (JsonObject zone : zonesArray) {
-            uint8_t idx = zone["index"] | 255;
-            if (idx >= MAX_ZONES) continue;
-            if (zone.containsKey("description")) zoneCache[idx].description = zone["description"].as<String>();
-            if (zone.containsKey("time"))        zoneCache[idx].time        = zone["time"].as<float>();
-            if (zone.containsKey("enabled"))     zoneCache[idx].enabled     = zone["enabled"].as<bool>();
-            if (zone.containsKey("group"))       zoneCache[idx].group       = (uint8_t)zone["group"].as<int>();
-            if (zone.containsKey("order"))       zoneCache[idx].order       = (uint8_t)zone["order"].as<int>();
+    if (!doc.containsKey("zones") || !doc["zones"].is<JsonArray>()) {
+        Serial.println("[Storage] Import show payload missing zones array");
+        return false;
+    }
+
+    // Replace semantics: start from firmware defaults and then apply imported entries.
+    initZoneDefaults();
+
+    JsonArray zonesArray = doc["zones"].as<JsonArray>();
+    bool appliedAnyZone = false;
+    for (JsonObject zone : zonesArray) {
+        if (!zone.containsKey("index")) {
+            continue;
         }
-        saveZonesToFile();
+
+        int idx = zone["index"].as<int>();
+        if (idx < 0 || idx >= MAX_ZONES) {
+            continue;
+        }
+
+        ZoneData updated = zoneCache[idx];
+        if (zone.containsKey("description")) {
+            updated.description = zone["description"].as<String>();
+        }
+        if (zone.containsKey("time")) {
+            updated.time = zone["time"].as<float>();
+        }
+        if (zone.containsKey("enabled")) {
+            updated.enabled = zone["enabled"].as<bool>();
+        }
+        if (zone.containsKey("group")) {
+            updated.group = static_cast<uint8_t>(constrain(zone["group"].as<int>(), 0, 15));
+        }
+        if (zone.containsKey("order")) {
+            updated.order = static_cast<uint8_t>(constrain(zone["order"].as<int>(), 0, MAX_ZONES - 1));
+        }
+
+        zoneCache[idx] = updated;
+        appliedAnyZone = true;
+    }
+
+    if (!appliedAnyZone) {
+        Serial.println("[Storage] Import show payload contained no valid zone entries");
+        return false;
+    }
+
+    if (!saveZonesToFile()) {
+        Serial.println("[Storage] Failed to save imported show payload");
+        return false;
+    }
+
+    return true;
+}
+
+String StorageManager::exportSettingsJson() {
+    DynamicJsonDocument doc(2048);
+
+    JsonObject settings = doc.createNestedObject("settings");
+    settings["igniterDurationMs"] = getIgniterDuration();
+    settings["autoDelay"] = getAutoDelay();
+    settings["abortOnDisconnect"] = getAbortOnDisconnect();
+    settings["eStopResetMode"] = static_cast<uint8_t>(getEStopResetMode());
+    settings["continuityLoGood"] = getContinuityLoGood();
+    settings["continuityHiGood"] = getContinuityHiGood();
+    settings["continuityLoOpen"] = getContinuityLoOpen();
+
+    JsonArray auxNames = doc.createNestedArray("auxNames");
+    auxNames.add(getAuxRelayName(0));
+    auxNames.add(getAuxRelayName(1));
+
+    String jsonStr;
+    serializeJson(doc, jsonStr);
+    return jsonStr;
+}
+
+bool StorageManager::importSettingsJson(const String& jsonStr) {
+    DynamicJsonDocument doc(4096);
+    DeserializationError error = deserializeJson(doc, jsonStr);
+    if (error) {
+        Serial.printf("[Storage] Settings import parse error: %s\n", error.c_str());
+        return false;
+    }
+
+    bool appliedAnySetting = false;
+    if (doc.containsKey("settings") && doc["settings"].is<JsonObject>()) {
+        JsonObject settings = doc["settings"].as<JsonObject>();
+
+        if (settings.containsKey("igniterDurationMs")) {
+            int durationMs = constrain(settings["igniterDurationMs"].as<int>(), 100, 10000);
+            setIgniterDuration(static_cast<uint16_t>(durationMs));
+            appliedAnySetting = true;
+        }
+        if (settings.containsKey("autoDelay")) {
+            int autoDelay = constrain(settings["autoDelay"].as<int>(), 0, 60);
+            setAutoDelay(static_cast<uint8_t>(autoDelay));
+            appliedAnySetting = true;
+        }
+        if (settings.containsKey("abortOnDisconnect")) {
+            setAbortOnDisconnect(settings["abortOnDisconnect"].as<bool>());
+            appliedAnySetting = true;
+        }
+        if (settings.containsKey("eStopResetMode")) {
+            int mode = constrain(settings["eStopResetMode"].as<int>(), 0, 2);
+            setEStopResetMode(static_cast<EStopResetMode>(mode));
+            appliedAnySetting = true;
+        }
+
+        float loGood = getContinuityLoGood();
+        float hiGood = getContinuityHiGood();
+        float loOpen = getContinuityLoOpen();
+        bool continuityUpdated = false;
+
+        if (settings.containsKey("continuityLoGood")) {
+            loGood = constrain(settings["continuityLoGood"].as<float>(), 0.0f, 5.0f);
+            continuityUpdated = true;
+        }
+        if (settings.containsKey("continuityHiGood")) {
+            hiGood = constrain(settings["continuityHiGood"].as<float>(), 0.0f, 5.0f);
+            continuityUpdated = true;
+        }
+        if (settings.containsKey("continuityLoOpen")) {
+            loOpen = constrain(settings["continuityLoOpen"].as<float>(), 0.0f, 5.0f);
+            continuityUpdated = true;
+        }
+
+        if (continuityUpdated) {
+            setContinuityThresholds(loGood, hiGood, loOpen);
+            appliedAnySetting = true;
+        }
+    }
+
+    if (doc.containsKey("auxNames") && doc["auxNames"].is<JsonArray>()) {
+        JsonArray auxNames = doc["auxNames"].as<JsonArray>();
+        if (auxNames.size() >= 2) {
+            setAuxRelayName(0, auxNames[0].as<String>());
+            setAuxRelayName(1, auxNames[1].as<String>());
+            appliedAnySetting = true;
+        }
+    }
+
+    if (!appliedAnySetting) {
+        Serial.println("[Storage] Settings import payload contained no supported values");
+        return false;
     }
 
     return true;

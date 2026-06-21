@@ -114,6 +114,26 @@
                             <input type="text" id="aux2Name" placeholder="Music">
                         </div>
                     </details>
+                    <details class="aux-section" id="showManagementDetails">
+                        <summary>Show Management</summary>
+                        <div class="builder-show-actions">
+                            <button id="builderShowExportBtn" class="btn btn-secondary" type="button">Export Show
+                                Config</button>
+                            <div class="file-drop-zone" id="builderShowDropZone" role="button" tabindex="0"
+                                aria-label="Show config import drop zone">
+                                <p class="file-drop-zone-title">Drop show JSON file here</p>
+                                <p class="file-drop-zone-hint">or use browse to select a file</p>
+                                <div class="file-drop-zone-actions">
+                                    <button id="builderShowBrowseBtn" class="btn btn-secondary"
+                                        type="button">Browse</button>
+                                    <button id="builderShowImportBtn" class="btn btn-primary" type="button">Import Show
+                                        Config</button>
+                                </div>
+                                <p class="file-drop-zone-name" id="builderShowFileName">No file selected</p>
+                                <input type="file" id="builderShowImportFile" accept=".json" hidden>
+                            </div>
+                        </div>
+                    </details>
                     <div class="builder-action-dock" id="builderActionDock">
                         <div class="builder-actions">
                             <span id="builderDirtyBadge" class="builder-dirty-badge" style="display: none;">Unsaved
@@ -310,15 +330,25 @@
                     <button id="calibrateBtn" class="btn btn-secondary">Update Thresholds</button>
                 </div>
 
-                <!-- Import/Export -->
                 <div class="settings-section card">
-                    <h3>Show Management</h3>
-                    <button id="exportBtn" class="btn btn-secondary">Export Show Config</button>
-                    <div class="import-div">
-                        <label for="importFile">Import Show Config:</label>
-                        <input type="file" id="importFile" accept=".json">
-                        <button id="importBtn" class="btn btn-secondary">Import</button>
+                    <h3>Settings Management</h3>
+                    <p class="muted">Export or import user-configurable settings only. WiFi credentials and show data
+                        are excluded.</p>
+                    <button id="settingsExportBtn" class="btn btn-secondary" type="button">Export Settings</button>
+                    <div class="file-drop-zone" id="settingsDropZone" role="button" tabindex="0"
+                        aria-label="Settings import drop zone">
+                        <p class="file-drop-zone-title">Drop settings JSON file here</p>
+                        <p class="file-drop-zone-hint">or use browse to select a file</p>
+                        <div class="file-drop-zone-actions">
+                            <button id="settingsBrowseBtn" class="btn btn-secondary" type="button">Browse</button>
+                            <button id="settingsImportBtn" class="btn btn-primary" type="button">Import
+                                Settings</button>
+                        </div>
+                        <p class="file-drop-zone-name" id="settingsFileName">No file selected</p>
+                        <input type="file" id="settingsImportFile" accept=".json" hidden>
                     </div>
+                    <hr class="wifi-divider">
+                    <button id="factoryResetBtn" class="btn btn-danger" type="button">Reset To Factory Defaults</button>
                 </div>
 
                 <!-- Relay Test -->
@@ -426,6 +456,8 @@
             zones: appState.zones.map((zone) => ({ ...zone })),
             auxNames: [...appState.auxNames]
         };
+        let pendingShowImport = false;
+        let pendingSettingsImport = false;
 
         let ws = null;
         let wsReconnectAttempts = 0;
@@ -619,7 +651,22 @@
                     updateShowState(msg);
                     break;
                 case 'export_show':
-                    handleExportMessage(msg);
+                    handleShowExportMessage(msg);
+                    break;
+                case 'export_settings':
+                    handleSettingsExportMessage(msg);
+                    break;
+                case 'import_show_result':
+                    showToast(msg.msg || 'Show import complete', 'success');
+                    pendingShowImport = false;
+                    clearBuilderDirty();
+                    break;
+                case 'import_settings_result':
+                    showToast(msg.msg || 'Settings import complete', 'success');
+                    pendingSettingsImport = false;
+                    break;
+                case 'factory_reset_result':
+                    showToast(msg.msg || 'Factory reset started', 'success');
                     break;
                 case 'estop_active':
                     handleEStopActive();
@@ -628,6 +675,10 @@
                     wsSend({ type: 'pong' });
                     break;
                 case 'error':
+                    if (typeof msg.code === 'string' && msg.code.includes('IMPORT')) {
+                        pendingShowImport = false;
+                        pendingSettingsImport = false;
+                    }
                     showToast(msg.msg || 'Unknown error', 'error');
                     break;
                 default:
@@ -684,6 +735,17 @@
 
             if (!builderDirty) {
                 refreshBuilderSavedSnapshot();
+            }
+
+            if (pendingShowImport) {
+                pendingShowImport = false;
+                clearBuilderDirty();
+                showToast('Show configuration imported', 'success');
+            }
+
+            if (pendingSettingsImport) {
+                pendingSettingsImport = false;
+                showToast('Settings imported', 'success');
             }
 
             renderApp();
@@ -840,11 +902,11 @@
             renderShowZones();
         }
 
-        function handleExportMessage(msg) {
+        function downloadJsonPayload(dataRaw, fileName, successMessage) {
             let payload = null;
-            if (msg.dataRaw) {
+            if (dataRaw) {
                 try {
-                    payload = JSON.parse(msg.dataRaw);
+                    payload = JSON.parse(dataRaw);
                 } catch (error) {
                     showToast('Export payload was invalid', 'error');
                     return;
@@ -859,10 +921,18 @@
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = url;
-            link.download = 'apexpyro-show.json';
+            link.download = fileName;
             link.click();
             URL.revokeObjectURL(url);
-            showToast('Show configuration exported', 'success');
+            showToast(successMessage, 'success');
+        }
+
+        function handleShowExportMessage(msg) {
+            downloadJsonPayload(msg.dataRaw, 'apexpyro-show.json', 'Show configuration exported');
+        }
+
+        function handleSettingsExportMessage(msg) {
+            downloadJsonPayload(msg.dataRaw, 'apexpyro-settings.json', 'Settings exported');
         }
 
         function handleEStopActive() {
@@ -1713,12 +1783,7 @@
             wsSend({ type: 'export_show' });
         }
 
-        function importShowData() {
-            if (!requireControllerAction('import show data')) {
-                return;
-            }
-
-            const file = document.getElementById('importFile').files[0];
+        function readJsonFile(file, onValidJson) {
             if (!file) {
                 showToast('Select a JSON file first', 'error');
                 return;
@@ -1728,13 +1793,133 @@
             reader.onload = () => {
                 try {
                     const parsed = JSON.parse(String(reader.result || '{}'));
-                    wsSend({ type: 'import_show', data: parsed });
-                    showToast('Import sent', 'success');
+                    onValidJson(parsed);
                 } catch (error) {
                     showToast('Invalid JSON file', 'error');
                 }
             };
             reader.readAsText(file);
+        }
+
+        function wireFileDropZone(options) {
+            const dropZone = document.getElementById(options.dropZoneId);
+            const fileInput = document.getElementById(options.fileInputId);
+            const browseButton = document.getElementById(options.browseButtonId);
+            const importButton = document.getElementById(options.importButtonId);
+            const fileName = document.getElementById(options.fileNameId);
+
+            if (!dropZone || !fileInput || !browseButton || !importButton || !fileName) {
+                return;
+            }
+
+            const updateSelectedFile = (file) => {
+                if (!file) {
+                    fileName.textContent = 'No file selected';
+                    dropZone.classList.remove('has-file');
+                    return;
+                }
+
+                fileName.textContent = file.name;
+                dropZone.classList.add('has-file');
+            };
+
+            browseButton.addEventListener('click', () => fileInput.click());
+            dropZone.addEventListener('click', (event) => {
+                if (event.target.closest('button')) {
+                    return;
+                }
+                fileInput.click();
+            });
+
+            fileInput.addEventListener('change', () => {
+                updateSelectedFile(fileInput.files[0]);
+            });
+
+            const preventDropDefaults = (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+            };
+
+            ['dragenter', 'dragover'].forEach((eventName) => {
+                dropZone.addEventListener(eventName, (event) => {
+                    preventDropDefaults(event);
+                    dropZone.classList.add('is-dragover');
+                });
+            });
+
+            ['dragleave', 'drop'].forEach((eventName) => {
+                dropZone.addEventListener(eventName, (event) => {
+                    preventDropDefaults(event);
+                    dropZone.classList.remove('is-dragover');
+                });
+            });
+
+            dropZone.addEventListener('drop', (event) => {
+                const droppedFile = event.dataTransfer?.files?.[0];
+                if (!droppedFile) {
+                    return;
+                }
+
+                const transfer = new DataTransfer();
+                transfer.items.add(droppedFile);
+                fileInput.files = transfer.files;
+                updateSelectedFile(droppedFile);
+            });
+
+            dropZone.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    fileInput.click();
+                }
+            });
+
+            importButton.addEventListener('click', () => {
+                options.onImport(fileInput.files[0]);
+            });
+        }
+
+        function importShowData() {
+            if (!requireControllerAction('import show data')) {
+                return;
+            }
+            const file = document.getElementById('builderShowImportFile').files[0];
+            readJsonFile(file, (parsed) => {
+                if (wsSend({ type: 'import_show', data: parsed })) {
+                    pendingShowImport = true;
+                }
+            });
+        }
+
+        function exportSettingsData() {
+            if (!requireControllerAction('export settings')) {
+                return;
+            }
+            wsSend({ type: 'export_settings' });
+        }
+
+        function importSettingsData() {
+            if (!requireControllerAction('import settings')) {
+                return;
+            }
+
+            const file = document.getElementById('settingsImportFile').files[0];
+            readJsonFile(file, (parsed) => {
+                if (wsSend({ type: 'import_settings', data: parsed })) {
+                    pendingSettingsImport = true;
+                }
+            });
+        }
+
+        function factoryResetDevice() {
+            if (!requireControllerAction('factory reset')) {
+                return;
+            }
+
+            showConfirm(
+                'Factory Reset',
+                'Reset all user settings and show data to firmware defaults, then reboot the controller?',
+                () => wsSend({ type: 'factory_reset' })
+            );
         }
 
         function toggleRoleLock() {
@@ -1890,10 +2075,29 @@
             document.getElementById('disableAllBtn').addEventListener('click', () => setAllBuilderZonesEnabled(false));
             document.getElementById('saveBuilderBtn').addEventListener('click', saveBuilderChanges);
             document.getElementById('clearAllBtn').addEventListener('click', clearAllShowData);
-            document.getElementById('exportBtn').addEventListener('click', exportShowData);
-            document.getElementById('importBtn').addEventListener('click', importShowData);
+            document.getElementById('builderShowExportBtn').addEventListener('click', exportShowData);
+            document.getElementById('settingsExportBtn').addEventListener('click', exportSettingsData);
+            document.getElementById('factoryResetBtn').addEventListener('click', factoryResetDevice);
             document.getElementById('autoStartBtn').addEventListener('click', startAutoShow);
             document.getElementById('autoStopBtn').addEventListener('click', () => wsSend({ type: 'auto_stop' }));
+
+            wireFileDropZone({
+                dropZoneId: 'builderShowDropZone',
+                fileInputId: 'builderShowImportFile',
+                browseButtonId: 'builderShowBrowseBtn',
+                importButtonId: 'builderShowImportBtn',
+                fileNameId: 'builderShowFileName',
+                onImport: () => importShowData()
+            });
+
+            wireFileDropZone({
+                dropZoneId: 'settingsDropZone',
+                fileInputId: 'settingsImportFile',
+                browseButtonId: 'settingsBrowseBtn',
+                importButtonId: 'settingsImportBtn',
+                fileNameId: 'settingsFileName',
+                onImport: () => importSettingsData()
+            });
 
             document.getElementById('auxToggle0').addEventListener('click', () => toggleAuxRelay(0));
             document.getElementById('auxToggle1').addEventListener('click', () => toggleAuxRelay(1));

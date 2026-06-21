@@ -80,6 +80,8 @@ public:
     // Import/Export
     String exportShowJson();
     bool importShowJson(const String& jsonStr);
+    String exportSettingsJson();
+    bool importSettingsJson(const String& jsonStr);
     
     // Utilities
     void clearAllZones();  // Reset all zone times/descriptions

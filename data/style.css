@@ -356,6 +356,10 @@ h3 {
   opacity: 0.6;
 }
 
+#settingsExportBtn {
+  margin-bottom: 1.5rem;
+}
+
 /* ========================================================================== */
 /* SPLASH PAGE */
 /* ========================================================================== */
@@ -726,11 +730,64 @@ h3 {
 .aux-section summary {
   cursor: pointer;
   font-weight: 700;
-  margin-bottom: 0.75rem;
+  margin: 0;
 }
 
 .aux-section[open] summary {
-  margin-bottom: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.builder-show-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.file-drop-zone {
+  border: 1px dashed var(--border-color);
+  border-radius: 10px;
+  padding: 0.9rem;
+  background: rgba(255, 255, 255, 0.01);
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease;
+}
+
+.file-drop-zone:hover,
+.file-drop-zone:focus-within {
+  border-color: var(--accent-secondary);
+}
+
+.file-drop-zone.is-dragover {
+  border-color: var(--accent-secondary);
+  background: rgba(0, 180, 216, 0.08);
+}
+
+.file-drop-zone-title {
+  font-weight: 600;
+  margin-bottom: 0.2rem;
+}
+
+.file-drop-zone-hint {
+  color: var(--text-dim);
+  font-size: 0.86rem;
+  margin-bottom: 0.7rem;
+}
+
+.file-drop-zone-actions {
+  display: flex;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.file-drop-zone-name {
+  margin-top: 0.6rem;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+}
+
+.file-drop-zone.has-file .file-drop-zone-name {
+  color: var(--text-main);
 }
 
 .aux-input {
@@ -1332,21 +1389,6 @@ input:checked + .slider::before {
 
 #wifiNetworks {
   width: 100%;
-}
-
-.import-div {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 1rem;
-  align-items: end;
-}
-
-.import-div input[type="file"] {
-  width: 100%;
-}
-
-.import-div label {
-  grid-column: 1 / -1;
 }
 
 .aux-controls {

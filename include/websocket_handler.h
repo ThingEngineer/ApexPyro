@@ -34,6 +34,11 @@ private:
         String key;
     };
 
+    struct ClientPayloadBuffer {
+        uint32_t clientId;
+        String payload;
+    };
+
     AsyncWebServer server;
     AsyncWebSocket ws;
     
@@ -51,6 +56,7 @@ private:
     bool fullStateDirty;
     std::vector<uint32_t> viewerClientIds;
     std::vector<ClientIdentity> clientIdentities;
+    std::vector<ClientPayloadBuffer> payloadBuffers;
     
     // Heartbeat & timeout
     void handleHeartbeatTimeout();
@@ -63,6 +69,7 @@ private:
     void handleFireGroupCommand(uint32_t clientId, const char* data);
     void handleArmCommand(uint32_t clientId, const char* data);
     void handleExportShowCommand(uint32_t clientId);
+    void handleExportSettingsCommand(uint32_t clientId);
     void handleClearAllCommand(uint32_t clientId);
     void handleAuxCommand(uint32_t clientId, const char* data);
     void handleEStopCommand(uint32_t clientId);
@@ -77,6 +84,8 @@ private:
     void handleForgetWiFiCommand(uint32_t clientId);
     void handleWiFiConnectCommand(uint32_t clientId, const char* data);
     void handleImportShowCommand(uint32_t clientId, const char* data);
+    void handleImportSettingsCommand(uint32_t clientId, const char* data);
+    void handleFactoryResetCommand(uint32_t clientId);
     void handleRelayTestCommand(uint32_t clientId, const char* data);
     void handleClientHello(uint32_t clientId, const char* data);
     void handleRoleLockCommand(uint32_t clientId, const char* data);
@@ -95,6 +104,8 @@ private:
     bool hasViewer(uint32_t clientId) const;
     void addViewer(uint32_t clientId);
     void removeViewer(uint32_t clientId);
+    String& getOrCreatePayloadBuffer(uint32_t clientId);
+    void clearPayloadBuffer(uint32_t clientId);
 
     // Relay test state
     void startRelayTest();

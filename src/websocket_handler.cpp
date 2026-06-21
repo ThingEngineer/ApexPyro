@@ -48,6 +48,26 @@ void WebSocketHandler::removeViewer(uint32_t clientId) {
     }
 }
 
+String& WebSocketHandler::getOrCreatePayloadBuffer(uint32_t clientId) {
+    for (auto& entry : payloadBuffers) {
+        if (entry.clientId == clientId) {
+            return entry.payload;
+        }
+    }
+
+    payloadBuffers.push_back({clientId, String()});
+    return payloadBuffers.back().payload;
+}
+
+void WebSocketHandler::clearPayloadBuffer(uint32_t clientId) {
+    for (auto it = payloadBuffers.begin(); it != payloadBuffers.end(); ++it) {
+        if (it->clientId == clientId) {
+            payloadBuffers.erase(it);
+            return;
+        }
+    }
+}
+
 void WebSocketHandler::setClientIdentity(uint32_t clientId, const String& key) {
     for (auto& identity : clientIdentities) {
         if (identity.clientId == clientId) {
@@ -261,80 +281,93 @@ void WebSocketHandler::onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* c
         AwsFrameInfo* info = (AwsFrameInfo*)arg;
         uint32_t clientId = client->id();
 
-        if (info->final && info->index == 0 && info->len == len) {
-            String payload;
-            payload.reserve(len + 1);
-            for (size_t i = 0; i < len; i++) {
-                payload += static_cast<char>(data[i]);
-            }
+        String& payload = wsHandler.getOrCreatePayloadBuffer(clientId);
+        if (info->index == 0) {
+            payload = "";
+            payload.reserve(info->len + 1);
+        }
 
-            StaticJsonDocument<32> typeFilter;
-            typeFilter["type"] = true;
-            StaticJsonDocument<96> doc;
-            DeserializationError error = deserializeJson(doc, payload, DeserializationOption::Filter(typeFilter));
-            if (error) {
-                Serial.printf("[WebSocketHandler] JSON parse error: %s\n", error.c_str());
-                return;
-            }
+        payload.concat(reinterpret_cast<const char*>(data), len);
 
-            const char* msgType = doc["type"] | "";
+        if (!(info->final && (info->index + len == info->len))) {
+            return;
+        }
 
+        StaticJsonDocument<32> typeFilter;
+        typeFilter["type"] = true;
+        StaticJsonDocument<96> doc;
+        DeserializationError error = deserializeJson(doc, payload, DeserializationOption::Filter(typeFilter));
+        if (error) {
+            Serial.printf("[WebSocketHandler] JSON parse error: %s\n", error.c_str());
+            wsHandler.clearPayloadBuffer(clientId);
+            return;
+        }
+
+        const char* msgType = doc["type"] | "";
+
+        if (clientId == wsHandler.controllerClientId) {
+            wsHandler.lastControllerMessageMs = millis();
+        }
+
+        if (strcmp(msgType, "fire") == 0) {
+            wsHandler.handleFireCommand(clientId, payload.c_str());
+        } else if (strcmp(msgType, "fire_group") == 0) {
+            wsHandler.handleFireGroupCommand(clientId, payload.c_str());
+        } else if (strcmp(msgType, "arm") == 0) {
+            wsHandler.handleArmCommand(clientId, payload.c_str());
+        } else if (strcmp(msgType, "aux") == 0) {
+            wsHandler.handleAuxCommand(clientId, payload.c_str());
+        } else if (strcmp(msgType, "estop") == 0) {
+            wsHandler.handleEStopCommand(clientId);
+        } else if (strcmp(msgType, "estop_reset") == 0) {
+            wsHandler.handleEStopReset(clientId);
+        } else if (strcmp(msgType, "auto_start") == 0) {
+            wsHandler.handleAutoStartCommand(clientId, payload.c_str());
+        } else if (strcmp(msgType, "auto_stop") == 0) {
+            wsHandler.handleAutoStopCommand(clientId);
+        } else if (strcmp(msgType, "set_zone") == 0) {
+            wsHandler.handleZoneConfigCommand(clientId, payload.c_str());
+        } else if (strcmp(msgType, "set_setting") == 0) {
+            wsHandler.handleSettingCommand(clientId, payload.c_str());
+        } else if (strcmp(msgType, "save_builder") == 0) {
+            wsHandler.handleBuilderSaveCommand(clientId, payload.c_str());
+        } else if (strcmp(msgType, "set_aux_name") == 0) {
+            wsHandler.handleAuxNameCommand(clientId, payload.c_str());
+        } else if (strcmp(msgType, "set_ap_credentials") == 0) {
+            wsHandler.handleApConfigCommand(clientId, payload.c_str());
+        } else if (strcmp(msgType, "wifi_connect") == 0) {
+            wsHandler.handleWiFiConnectCommand(clientId, payload.c_str());
+        } else if (strcmp(msgType, "wifi_forget") == 0) {
+            wsHandler.handleForgetWiFiCommand(clientId);
+        } else if (strcmp(msgType, "clear_all") == 0) {
+            wsHandler.handleClearAllCommand(clientId);
+        } else if (strcmp(msgType, "export_show") == 0) {
+            wsHandler.handleExportShowCommand(clientId);
+        } else if (strcmp(msgType, "export_settings") == 0) {
+            wsHandler.handleExportSettingsCommand(clientId);
+        } else if (strcmp(msgType, "get_role") == 0) {
+            wsHandler.sendRoleToClient(clientId);
+        } else if (strcmp(msgType, "get_state") == 0) {
+            wsHandler.broadcastFullState(clientId);
+        } else if (strcmp(msgType, "import_show") == 0) {
+            wsHandler.handleImportShowCommand(clientId, payload.c_str());
+        } else if (strcmp(msgType, "import_settings") == 0) {
+            wsHandler.handleImportSettingsCommand(clientId, payload.c_str());
+        } else if (strcmp(msgType, "factory_reset") == 0) {
+            wsHandler.handleFactoryResetCommand(clientId);
+        } else if (strcmp(msgType, "relay_test") == 0) {
+            wsHandler.handleRelayTestCommand(clientId, payload.c_str());
+        } else if (strcmp(msgType, "client_hello") == 0) {
+            wsHandler.handleClientHello(clientId, payload.c_str());
+        } else if (strcmp(msgType, "set_role_lock") == 0) {
+            wsHandler.handleRoleLockCommand(clientId, payload.c_str());
+        } else if (strcmp(msgType, "pong") == 0) {
             if (clientId == wsHandler.controllerClientId) {
-                wsHandler.lastControllerMessageMs = millis();
-            }
-
-            if (strcmp(msgType, "fire") == 0) {
-                wsHandler.handleFireCommand(clientId, payload.c_str());
-            } else if (strcmp(msgType, "fire_group") == 0) {
-                wsHandler.handleFireGroupCommand(clientId, payload.c_str());
-            } else if (strcmp(msgType, "arm") == 0) {
-                wsHandler.handleArmCommand(clientId, payload.c_str());
-            } else if (strcmp(msgType, "aux") == 0) {
-                wsHandler.handleAuxCommand(clientId, payload.c_str());
-            } else if (strcmp(msgType, "estop") == 0) {
-                wsHandler.handleEStopCommand(clientId);
-            } else if (strcmp(msgType, "estop_reset") == 0) {
-                wsHandler.handleEStopReset(clientId);
-            } else if (strcmp(msgType, "auto_start") == 0) {
-                wsHandler.handleAutoStartCommand(clientId, payload.c_str());
-            } else if (strcmp(msgType, "auto_stop") == 0) {
-                wsHandler.handleAutoStopCommand(clientId);
-            } else if (strcmp(msgType, "set_zone") == 0) {
-                wsHandler.handleZoneConfigCommand(clientId, payload.c_str());
-            } else if (strcmp(msgType, "set_setting") == 0) {
-                wsHandler.handleSettingCommand(clientId, payload.c_str());
-            } else if (strcmp(msgType, "save_builder") == 0) {
-                wsHandler.handleBuilderSaveCommand(clientId, payload.c_str());
-            } else if (strcmp(msgType, "set_aux_name") == 0) {
-                wsHandler.handleAuxNameCommand(clientId, payload.c_str());
-            } else if (strcmp(msgType, "set_ap_credentials") == 0) {
-                wsHandler.handleApConfigCommand(clientId, payload.c_str());
-            } else if (strcmp(msgType, "wifi_connect") == 0) {
-                wsHandler.handleWiFiConnectCommand(clientId, payload.c_str());
-            } else if (strcmp(msgType, "wifi_forget") == 0) {
-                wsHandler.handleForgetWiFiCommand(clientId);
-            } else if (strcmp(msgType, "clear_all") == 0) {
-                wsHandler.handleClearAllCommand(clientId);
-            } else if (strcmp(msgType, "export_show") == 0) {
-                wsHandler.handleExportShowCommand(clientId);
-            } else if (strcmp(msgType, "get_role") == 0) {
-                wsHandler.sendRoleToClient(clientId);
-            } else if (strcmp(msgType, "get_state") == 0) {
-                wsHandler.broadcastFullState(clientId);
-            } else if (strcmp(msgType, "import_show") == 0) {
-                wsHandler.handleImportShowCommand(clientId, payload.c_str());
-            } else if (strcmp(msgType, "relay_test") == 0) {
-                wsHandler.handleRelayTestCommand(clientId, payload.c_str());
-            } else if (strcmp(msgType, "client_hello") == 0) {
-                wsHandler.handleClientHello(clientId, payload.c_str());
-            } else if (strcmp(msgType, "set_role_lock") == 0) {
-                wsHandler.handleRoleLockCommand(clientId, payload.c_str());
-            } else if (strcmp(msgType, "pong") == 0) {
-                if (clientId == wsHandler.controllerClientId) {
-                    wsHandler.lastControllerPongMs = millis();
-                }
+                wsHandler.lastControllerPongMs = millis();
             }
         }
+
+        wsHandler.clearPayloadBuffer(clientId);
     }
 }
 
@@ -344,6 +377,7 @@ void WebSocketHandler::markStateDirty() {
 
 void WebSocketHandler::removeClient(uint32_t clientId) {
     removeViewer(clientId);
+    clearPayloadBuffer(clientId);
 
     for (auto it = clientIdentities.begin(); it != clientIdentities.end(); ++it) {
         if (it->clientId == clientId) {
@@ -1257,12 +1291,13 @@ void WebSocketHandler::advanceRelayTest() {
 }
 
 void WebSocketHandler::handleImportShowCommand(uint32_t clientId, const char* data) {
+    Serial.printf("[WebSocketHandler] import_show received from client %u\n", clientId);
     if (clientId != controllerClientId) {
         broadcastError("UNAUTHORIZED", "Only controller can import show data");
         return;
     }
 
-    StaticJsonDocument<8192> doc;
+    DynamicJsonDocument doc(8192);
     DeserializationError error = deserializeJson(doc, data);
     if (error) {
         broadcastError("INVALID_JSON", "Import payload is not valid JSON");
@@ -1276,7 +1311,8 @@ void WebSocketHandler::handleImportShowCommand(uint32_t clientId, const char* da
             broadcastError("IMPORT_FAILED", "Unable to import show data");
             return;
         }
-        broadcastFullState();
+
+        markStateDirty();
         return;
     }
 
@@ -1302,6 +1338,55 @@ void WebSocketHandler::handleExportShowCommand(uint32_t clientId) {
     }
 }
 
+void WebSocketHandler::handleExportSettingsCommand(uint32_t clientId) {
+    Serial.printf("[WebSocketHandler] export_settings received from client %u\n", clientId);
+    if (clientId != controllerClientId) {
+        broadcastError("UNAUTHORIZED", "Only controller can export settings");
+        return;
+    }
+
+    String jsonData = storage.exportSettingsJson();
+    DynamicJsonDocument doc(2304);
+    doc["type"] = "export_settings";
+    doc["dataRaw"] = jsonData;
+
+    String payload;
+    serializeJson(doc, payload);
+    AsyncWebSocketClient* targetClient = ws.client(clientId);
+    if (targetClient) {
+        targetClient->text(payload);
+    }
+}
+
+void WebSocketHandler::handleImportSettingsCommand(uint32_t clientId, const char* data) {
+    Serial.printf("[WebSocketHandler] import_settings received from client %u\n", clientId);
+    if (clientId != controllerClientId) {
+        broadcastError("UNAUTHORIZED", "Only controller can import settings");
+        return;
+    }
+
+    DynamicJsonDocument doc(8192);
+    DeserializationError error = deserializeJson(doc, data);
+    if (error) {
+        broadcastError("INVALID_JSON", "Settings import payload is not valid JSON");
+        return;
+    }
+
+    if (!doc.containsKey("data")) {
+        broadcastError("INVALID_IMPORT", "Missing settings import data payload");
+        return;
+    }
+
+    String jsonData;
+    serializeJson(doc["data"], jsonData);
+    if (!storage.importSettingsJson(jsonData)) {
+        broadcastError("IMPORT_FAILED", "Unable to import settings data");
+        return;
+    }
+
+    markStateDirty();
+}
+
 void WebSocketHandler::handleClearAllCommand(uint32_t clientId) {
     if (clientId != controllerClientId) {
         broadcastError("UNAUTHORIZED", "Only controller can clear show data");
@@ -1311,6 +1396,28 @@ void WebSocketHandler::handleClearAllCommand(uint32_t clientId) {
     storage.clearAllZones();
 
     broadcastFullState();
+}
+
+void WebSocketHandler::handleFactoryResetCommand(uint32_t clientId) {
+    Serial.printf("[WebSocketHandler] factory_reset received from client %u\n", clientId);
+    if (clientId != controllerClientId) {
+        broadcastError("UNAUTHORIZED", "Only controller can factory reset");
+        return;
+    }
+
+    storage.resetToDefaults();
+
+    StaticJsonDocument<192> doc;
+    doc["type"] = "factory_reset_result";
+    doc["ok"] = true;
+    doc["msg"] = "Factory defaults restored. Rebooting now";
+
+    String payload;
+    serializeJson(doc, payload);
+    ws.textAll(payload);
+
+    delay(300);
+    ESP.restart();
 }
 
 void WebSocketHandler::stopRelayTest(bool aborted) {
