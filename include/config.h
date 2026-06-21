@@ -22,6 +22,8 @@ static const int MUX_S3_PIN = 19;
 static const int MASTER_ARM_RELAY_PIN = 25;  // NO terminal → igniter bus power
 static const int AUX_RELAY_1_PIN = 26;
 static const int AUX_RELAY_2_PIN = 27;
+static const int AUX_RELAY_3_PIN = 32;
+static const uint8_t AUX_RELAY_COUNT = 3;
 
 // Safety Input Pins
 static const int KILL_SWITCH_PIN = 34;  // Input-only pin, active HIGH trigger
@@ -321,6 +323,7 @@ namespace NVS_KEYS {
     // Aux keys
     static const char* AUX_RELAY_1_NAME = "aux1_name";
     static const char* AUX_RELAY_2_NAME = "aux2_name";
+    static const char* AUX_RELAY_3_NAME = "aux3_name";
 }
 
 // ============================================================================

@@ -7,6 +7,7 @@
 #include "continuity.h"
 #include "websocket_handler.h"
 #include "show_runner.h"
+#include "logger.h"
 
 // ============================================================================
 // EXISTING RELAY BOARD CODE (Preserved)
@@ -131,6 +132,10 @@ void setup() {
   // Aux Relay 2 (GPIO 27) - Active HIGH, start LOW (safe)
   pinMode(AUX_RELAY_2_PIN, OUTPUT);
   digitalWrite(AUX_RELAY_2_PIN, LOW);
+
+  // Aux Relay 3 (GPIO 32) - Active HIGH, start LOW (safe)
+  pinMode(AUX_RELAY_3_PIN, OUTPUT);
+  digitalWrite(AUX_RELAY_3_PIN, LOW);
   
   // MUX Select Pins (GPIO 16-19) - all outputs, start LOW
   pinMode(MUX_S0_PIN, OUTPUT);

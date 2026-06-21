@@ -4,11 +4,14 @@
 #include "relay_manager.h"
 #include "continuity.h"
 #include "show_runner.h"
+#include "logger.h"
 #include <LittleFS.h>
 
 namespace {
 const uint32_t FULL_STATE_BROADCAST_MIN_INTERVAL_MS = 300;
 const uint32_t ROLE_LOCK_RECLAIM_TIMEOUT_MS = 15000;
+const uint32_t SERIAL_MONITOR_FLUSH_INTERVAL_MS = 150;
+const size_t SERIAL_MONITOR_MAX_BATCH_LINES = 16;
 }
 
 WebSocketHandler wsHandler;
@@ -20,7 +23,8 @@ WebSocketHandler::WebSocketHandler()
     : server(80), ws("/ws"), controllerClientId(0), controllerRoleLocked(true), controllerOwnerKey(""),
     lastHeartbeatMs(0), lastControllerMessageMs(0), lastControllerPongMs(0), lastShowStateBroadcastMs(0),
     lastFullStateBroadcastMs(0), controllerVacantSinceMs(0), estopLatched(false), estopResetPending(false),
-    fullStateDirty(false), relayTestActive(false), relayTestStepIdx(0), relayTestStepStartMs(0), relayTestPulseMs(0) {
+    fullStateDirty(false), relayTestActive(false), relayTestStepIdx(0), relayTestStepStartMs(0), relayTestPulseMs(0),
+    lastSerialMonitorFlushMs(0) {
 }
 
 bool WebSocketHandler::hasViewer(uint32_t clientId) const {
@@ -213,6 +217,11 @@ void WebSocketHandler::update() {
         fullStateDirty = false;
     }
 
+    if (!serialMonitorClients.empty() && now - lastSerialMonitorFlushMs >= SERIAL_MONITOR_FLUSH_INTERVAL_MS) {
+        flushSerialMonitorLines();
+        lastSerialMonitorFlushMs = now;
+    }
+
     // Broadcast lightweight system_status once after each relay auto-off so UI
     // fire buttons and arm state are updated promptly without a full-state flood.
     if (relayManager.consumeFireComplete()) {
@@ -249,6 +258,7 @@ void WebSocketHandler::onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* c
         Serial.printf("[WebSocketHandler] Client disconnected: %u\n", clientId);
         
         wsHandler.removeClient(clientId);
+        wsHandler.removeSerialMonitorClient(clientId);
         
         if (wsHandler.controllerClientId == clientId) {
             if (wsHandler.controllerRoleLocked) {
@@ -361,6 +371,8 @@ void WebSocketHandler::onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* c
             wsHandler.handleClientHello(clientId, payload.c_str());
         } else if (strcmp(msgType, "set_role_lock") == 0) {
             wsHandler.handleRoleLockCommand(clientId, payload.c_str());
+        } else if (strcmp(msgType, "serial_monitor") == 0) {
+            wsHandler.handleSerialMonitorCommand(clientId, payload.c_str());
         } else if (strcmp(msgType, "pong") == 0) {
             if (clientId == wsHandler.controllerClientId) {
                 wsHandler.lastControllerPongMs = millis();
@@ -507,12 +519,16 @@ void WebSocketHandler::broadcastFullState(uint32_t targetClientId) {
     }
 
     JsonArray auxNames = doc.createNestedArray("auxNames");
-    auxNames.add(storage.getAuxRelayName(0));
-    auxNames.add(storage.getAuxRelayName(1));
+    for (uint8_t relayIdx = 0; relayIdx < AUX_RELAY_COUNT; relayIdx++) {
+        auxNames.add(storage.getAuxRelayName(relayIdx));
+    }
 
     JsonArray auxState = doc.createNestedArray("auxState");
-    auxState.add(relayManager.getAuxRelayState(0));
-    auxState.add(relayManager.getAuxRelayState(1));
+    for (uint8_t relayIdx = 0; relayIdx < AUX_RELAY_COUNT; relayIdx++) {
+        auxState.add(relayManager.getAuxRelayState(relayIdx));
+    }
+
+    doc["serialMonitorRunning"] = isSerialMonitorRunning();
 
     JsonArray zones = doc.createNestedArray("zones");
     for (uint8_t zoneIdx = 0; zoneIdx < MAX_ZONES; zoneIdx++) {
@@ -582,12 +598,13 @@ void WebSocketHandler::broadcastWiFiStatus() {
     ws.textAll(json);
 }
 
-void WebSocketHandler::broadcastZoneFired(uint8_t zoneIdx, uint32_t duration) {
+void WebSocketHandler::broadcastZoneFired(uint8_t zoneIdx, uint32_t progressDuration, uint32_t igniterDuration) {
     StaticJsonDocument<128> doc;
     
     doc["type"] = "zone_fired";
     doc["zone"] = zoneIdx;
-    doc["duration"] = duration;
+    doc["progressDuration"] = progressDuration;
+    doc["igniterDuration"] = igniterDuration;
     
     String json;
     serializeJson(doc, json);
@@ -670,8 +687,10 @@ void WebSocketHandler::broadcastSystemStatus() {
     doc["wifiApActive"] = wifiManager.isAPActive();
     doc["wifiConnecting"] = wifiManager.isConnecting();
     JsonArray auxState = doc.createNestedArray("auxState");
-    auxState.add(relayManager.getAuxRelayState(0));
-    auxState.add(relayManager.getAuxRelayState(1));
+    for (uint8_t relayIdx = 0; relayIdx < AUX_RELAY_COUNT; relayIdx++) {
+        auxState.add(relayManager.getAuxRelayState(relayIdx));
+    }
+    doc["serialMonitorRunning"] = isSerialMonitorRunning();
     
     String json;
     serializeJson(doc, json);
@@ -772,14 +791,12 @@ void WebSocketHandler::handleFireCommand(uint32_t clientId, const char* data) {
         return;
     }
     
-    uint32_t runDurationMs = static_cast<uint32_t>(storage.getZoneTime(zone) * 1000.0f);
-    if (runDurationMs == 0) {
-        runDurationMs = 1;
-    }
-
+    uint32_t zoneDurationMs = static_cast<uint32_t>(storage.getZoneTime(zone) * 1000.0f);
+    if (zoneDurationMs == 0) { zoneDurationMs = 1; }
     uint16_t ignitersOnDuration = storage.getIgniterDuration();
+
     relayManager.startZoneFire(zone, ignitersOnDuration);
-    broadcastZoneFired(zone, runDurationMs);
+    broadcastZoneFired(zone, zoneDurationMs, static_cast<uint32_t>(ignitersOnDuration));
     broadcastSystemStatus();
 }
 
@@ -856,18 +873,13 @@ void WebSocketHandler::handleFireGroupCommand(uint32_t clientId, const char* dat
     uint32_t runDurationMs = 0;
     for (uint8_t zoneIdx : zones) {
         uint32_t zoneDurationMs = static_cast<uint32_t>(storage.getZoneTime(zoneIdx) * 1000.0f);
-        if (zoneDurationMs > runDurationMs) {
-            runDurationMs = zoneDurationMs;
-        }
+        if (zoneDurationMs > runDurationMs) { runDurationMs = zoneDurationMs; }
     }
-    if (runDurationMs == 0) {
-        runDurationMs = 1;
-    }
-
+    if (runDurationMs == 0) { runDurationMs = 1; }
     uint16_t ignitersOnDuration = storage.getIgniterDuration();
     relayManager.startZonesFire(zones, ignitersOnDuration);
     for (uint8_t zoneIdx : zones) {
-        broadcastZoneFired(zoneIdx, runDurationMs);
+        broadcastZoneFired(zoneIdx, runDurationMs, static_cast<uint32_t>(ignitersOnDuration));
     }
     broadcastSystemStatus();
 }
@@ -1137,8 +1149,9 @@ void WebSocketHandler::handleBuilderSaveCommand(uint32_t clientId, const char* d
     if (doc.containsKey("auxNames") && doc["auxNames"].is<JsonArray>()) {
         JsonArray auxNames = doc["auxNames"].as<JsonArray>();
         if (auxNames.size() >= 2) {
-            storage.setAuxRelayName(0, auxNames[0].as<String>());
-            storage.setAuxRelayName(1, auxNames[1].as<String>());
+            for (uint8_t relayIdx = 0; relayIdx < AUX_RELAY_COUNT && relayIdx < auxNames.size(); relayIdx++) {
+                storage.setAuxRelayName(relayIdx, auxNames[relayIdx].as<String>());
+            }
         }
     }
 
@@ -1159,6 +1172,61 @@ void WebSocketHandler::handleAuxNameCommand(uint32_t clientId, const char* data)
 
     storage.setAuxRelayName(relay, name);
     markStateDirty();
+}
+
+void WebSocketHandler::handleSerialMonitorCommand(uint32_t clientId, const char* data) {
+    if (clientId != controllerClientId) {
+        broadcastError("UNAUTHORIZED", "Only controller can control serial monitor");
+        return;
+    }
+
+    StaticJsonDocument<128> doc;
+    deserializeJson(doc, data);
+    const char* action = doc["action"] | "start";
+
+    if (strcmp(action, "stop") == 0) {
+        serialMonitorClients.clear();
+        broadcastSerialMonitorState();
+        return;
+    }
+
+    if (strcmp(action, "start") != 0) {
+        broadcastError("INVALID_ACTION", "Serial monitor action must be start or stop");
+        return;
+    }
+
+    SerialMonitorClientState* existing = findSerialMonitorClient(clientId);
+    if (!existing) {
+        serialMonitorClients.push_back({clientId, 0});
+    }
+
+    String lines[SERIAL_MONITOR_MAX_BATCH_LINES];
+    uint32_t sequences[SERIAL_MONITOR_MAX_BATCH_LINES] = {0};
+    size_t lineCount = apexSerial.collectRecent(lines, sequences, SERIAL_MONITOR_MAX_BATCH_LINES);
+    if (lineCount > 0) {
+        StaticJsonDocument<2048> payload;
+        payload["type"] = "serial_log";
+        JsonArray linesArray = payload.createNestedArray("lines");
+        for (size_t i = 0; i < lineCount; i++) {
+            JsonObject line = linesArray.createNestedObject();
+            line["seq"] = sequences[i];
+            line["text"] = lines[i];
+        }
+
+        String json;
+        serializeJson(payload, json);
+        AsyncWebSocketClient* client = ws.client(clientId);
+        if (client) {
+            client->text(json);
+        }
+
+        SerialMonitorClientState* updated = findSerialMonitorClient(clientId);
+        if (updated) {
+            updated->lastSequence = sequences[lineCount - 1];
+        }
+    }
+
+    broadcastSerialMonitorState();
 }
 
 void WebSocketHandler::handleApConfigCommand(uint32_t clientId, const char* data) {
@@ -1339,6 +1407,75 @@ void WebSocketHandler::handleRoleLockCommand(uint32_t clientId, const char* data
     Serial.printf("[WebSocketHandler] Controller role lock set to %s\n", controllerRoleLocked ? "LOCKED" : "UNLOCKED");
     broadcastRoleAssignment();
     broadcastFullState();
+}
+
+void WebSocketHandler::broadcastSerialMonitorState(uint32_t targetClientId) {
+    StaticJsonDocument<128> doc;
+    doc["type"] = "serial_monitor_state";
+    doc["running"] = isSerialMonitorRunning();
+
+    String json;
+    serializeJson(doc, json);
+
+    if (targetClientId == 0) {
+        ws.textAll(json);
+        return;
+    }
+
+    AsyncWebSocketClient* client = ws.client(targetClientId);
+    if (client) {
+        client->text(json);
+    }
+}
+
+SerialMonitorClientState* WebSocketHandler::findSerialMonitorClient(uint32_t clientId) {
+    for (auto& state : serialMonitorClients) {
+        if (state.clientId == clientId) {
+            return &state;
+        }
+    }
+    return nullptr;
+}
+
+void WebSocketHandler::removeSerialMonitorClient(uint32_t clientId) {
+    for (auto it = serialMonitorClients.begin(); it != serialMonitorClients.end(); ++it) {
+        if (it->clientId == clientId) {
+            serialMonitorClients.erase(it);
+            break;
+        }
+    }
+}
+
+bool WebSocketHandler::isSerialMonitorRunning() const {
+    return !serialMonitorClients.empty();
+}
+
+void WebSocketHandler::flushSerialMonitorLines() {
+    for (auto& state : serialMonitorClients) {
+        String lines[SERIAL_MONITOR_MAX_BATCH_LINES];
+        uint32_t sequences[SERIAL_MONITOR_MAX_BATCH_LINES] = {0};
+        size_t lineCount = apexSerial.collectSince(state.lastSequence, lines, sequences, SERIAL_MONITOR_MAX_BATCH_LINES);
+        if (lineCount == 0) {
+            continue;
+        }
+
+        StaticJsonDocument<2048> payload;
+        payload["type"] = "serial_log";
+        JsonArray linesArray = payload.createNestedArray("lines");
+        for (size_t i = 0; i < lineCount; i++) {
+            JsonObject line = linesArray.createNestedObject();
+            line["seq"] = sequences[i];
+            line["text"] = lines[i];
+        }
+
+        String json;
+        serializeJson(payload, json);
+        AsyncWebSocketClient* client = ws.client(state.clientId);
+        if (client) {
+            client->text(json);
+            state.lastSequence = sequences[lineCount - 1];
+        }
+    }
 }
 
 void WebSocketHandler::startRelayTest() {

@@ -686,7 +686,7 @@ h3 {
   gap: 1rem;
   justify-content: flex-end;
   border: 1px solid rgba(42, 48, 64, 0.95);
-  border-radius: 16px;
+  border-radius: 0;
   padding: 0.85rem 1rem;
   background: rgba(21, 25, 35, 0.94);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
@@ -702,11 +702,26 @@ h3 {
 
 .builder-action-dock {
   position: fixed;
-  left: 50%;
-  bottom: max(0.75rem, env(safe-area-inset-bottom));
-  transform: translateX(-50%);
-  width: min(calc(100% - 2rem), 1200px);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
   z-index: 90;
+}
+
+.builder-actions {
+  width: 100%;
+  max-width: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1rem;
+  padding: 0.9rem 1.5rem calc(0.9rem + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border-color);
+  background-color: rgba(21, 25, 35, 0.98);
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(10px);
 }
 
 .builder-dirty-badge {
@@ -808,6 +823,50 @@ h3 {
   color: var(--text-main);
   padding: 0.75rem;
   border-radius: 6px;
+}
+
+.serial-monitor-warning {
+  margin: 0.65rem 0 0.85rem;
+  color: #ffd54f;
+}
+
+.serial-monitor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.serial-monitor-status {
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.serial-monitor-status.is-running {
+  color: var(--status-safe);
+}
+
+.serial-monitor-status.is-stopped {
+  color: var(--text-muted);
+}
+
+.serial-monitor-output {
+  min-height: 180px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 0.85rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: rgba(11, 13, 20, 0.92);
+  color: #d9e2ef;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* ========================================================================== */
@@ -1066,17 +1125,6 @@ h3 {
 
 .continuity-dot.firing {
   background-color: var(--accent-primary);
-  animation: pulse-fire 0.5s infinite;
-}
-
-@keyframes pulse-fire {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
 }
 
 .zone-fire-button {
@@ -1229,8 +1277,9 @@ input:checked + .slider::before {
 /* ========================================================================== */
 
 .settings-content {
-  columns: 3 300px;
-  column-gap: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
 }
 
 .settings-section {
@@ -1238,11 +1287,9 @@ input:checked + .slider::before {
   border-radius: 12px;
   padding: 1.5rem;
   min-width: 0;
-  break-inside: avoid;
-  -webkit-column-break-inside: avoid;
-  display: inline-block;
+  display: block;
   width: 100%;
-  margin-bottom: 1.5rem;
+  margin-bottom: 0;
 }
 
 .settings-section h3 {
@@ -1586,10 +1633,6 @@ progress::-moz-progress-bar {
   .zones-grid {
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   }
-
-  .settings-content {
-    columns: 2 300px;
-  }
 }
 
 @media (max-width: 768px) {
@@ -1707,10 +1750,6 @@ progress::-moz-progress-bar {
 
   .modal-card {
     padding: 1.5rem;
-  }
-
-  .settings-content {
-    columns: 1;
   }
 
   #wifiConnectDiv {

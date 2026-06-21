@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>ApexPyro Controller</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=20260626-settings-layout">
 </head>
 
 <body>
@@ -113,6 +113,10 @@
                             <label>Aux 2 Name:</label>
                             <input type="text" id="aux2Name" placeholder="Music">
                         </div>
+                        <div class="aux-input">
+                            <label>Aux 3 Name:</label>
+                            <input type="text" id="aux3Name" placeholder="LEDs">
+                        </div>
                     </details>
                     <details class="aux-section" id="showManagementDetails">
                         <summary>Show Management</summary>
@@ -215,6 +219,7 @@
                     <div class="aux-button-row">
                         <button id="auxToggle0" class="btn btn-secondary" data-relay="0">Aux 1 Off</button>
                         <button id="auxToggle1" class="btn btn-secondary" data-relay="1">Aux 2 Off</button>
+                        <button id="auxToggle2" class="btn btn-secondary" data-relay="2">Aux 3 Off</button>
                     </div>
                 </div>
             </div>
@@ -313,7 +318,7 @@
 
                 <!-- Continuity Calibration -->
                 <div class="settings-section card">
-                    <h3>Continuity Calibration (Advanced)</h3>
+                    <h3>Igninter Continuity Calibration</h3>
                     <p class="muted">Voltage thresholds for e-match detection</p>
                     <div class="setting-group">
                         <label>Short Threshold (V):</label>
@@ -405,6 +410,26 @@
                     <button id="saveBatteryBtn" class="btn btn-secondary">Save Battery Profile</button>
                 </div>
 
+                <!-- Relay Test -->
+                <div class="settings-section card">
+                    <h3>Hardware Test</h3>
+                    <p class="muted">Sequential relay test (requires Armed state)</p>
+                    <button id="relayTestBtn" class="btn btn-secondary">Run Relay Test</button>
+                </div>
+
+                <div class="settings-section card serial-monitor-section">
+                    <h3>ESP32 Serial Monitor</h3>
+                    <p class="muted serial-monitor-warning">Not recommended during a live show. Streaming logs can
+                        add extra traffic and may bog down communication with the device.</p>
+                    <div class="serial-monitor-toolbar">
+                        <button id="serialMonitorToggleBtn" class="btn btn-secondary" type="button">Start
+                            Monitor</button>
+                        <button id="serialMonitorClearBtn" class="btn btn-secondary" type="button">Clear</button>
+                        <span id="serialMonitorStatus" class="serial-monitor-status">Stopped</span>
+                    </div>
+                    <div id="serialMonitorOutput" class="serial-monitor-output" aria-live="polite"></div>
+                </div>
+
                 <div class="settings-section card">
                     <h3>Settings Management</h3>
                     <p class="muted">Export or import user-configurable settings only. WiFi credentials and show data
@@ -424,13 +449,6 @@
                     </div>
                     <hr class="wifi-divider">
                     <button id="factoryResetBtn" class="btn btn-danger" type="button">Reset To Factory Defaults</button>
-                </div>
-
-                <!-- Relay Test -->
-                <div class="settings-section card">
-                    <h3>Hardware Test</h3>
-                    <p class="muted">Sequential relay test (requires Armed state)</p>
-                    <button id="relayTestBtn" class="btn btn-secondary">Run Relay Test</button>
                 </div>
             </div>
         </section>
@@ -477,7 +495,12 @@
         };
         const CONTINUITY_CLASSES = ['unknown', 'good', 'open', 'shorted', 'firing'];
         const CONTINUITY_LABELS = ['Unknown', 'Good', 'Open', 'Shorted', 'Firing'];
-        const DEFAULT_AUX_NAMES = ['Lights', 'Music'];
+        const CONTINUITY_FIELD_CONFIG = {
+            contLoGood: { decimals: 4, minFractionDigits: 0, min: 0, max: 5 },
+            contHiGood: { decimals: 4, minFractionDigits: 0, min: 0, max: 5 },
+            contLoOpen: { decimals: 1, minFractionDigits: 1, min: 0, max: 5 }
+        };
+        const DEFAULT_AUX_NAMES = ['Lights', 'Music', 'LEDs'];
         const DEFAULT_SETTINGS = {
             igniterDurationMs: 2000,
             igniterDurationSec: 2,
@@ -532,7 +555,7 @@
             showTotal: 0,
             estopActive: false,
             estopResetPending: false,
-            auxState: [false, false],
+            auxState: Array.from({ length: DEFAULT_AUX_NAMES.length }, () => false),
             wifiConfig: {
                 apSsid: 'ApexPyro',
                 apPassword: 'apexFIRE!pyro',
@@ -546,13 +569,19 @@
             settings: { ...DEFAULT_SETTINGS },
             auxNames: [...DEFAULT_AUX_NAMES],
             zones: Array.from({ length: MAX_ZONES }, (_, index) => defaultZone(index)),
-            relayTestRunning: false
+            relayTestRunning: false,
+            serialMonitor: {
+                running: false,
+                lines: []
+            }
         };
 
         const readyStateByZone = new Map();
-        const firingStateByZone = new Map();
+        const firingStateByZone = new Map();      // Tracks igniter duration (continuity dot)
+        const progressStateByZone = new Map();    // Tracks progress duration (progress bar)
         const readyStateByGroup = new Map();
-        const firingStateByGroup = new Map();
+        const firingStateByGroup = new Map();     // Tracks igniter duration (continuity dot)
+        const progressStateByGroup = new Map();   // Tracks progress duration (progress bar)
 
         let builderDirty = false;
         let builderSavedSnapshot = {
@@ -629,6 +658,61 @@
                 .replace(/'/g, '&#39;');
         }
 
+        function formatFixedDecimal(value, decimals, minFractionDigits = 0) {
+            const numericValue = Number(value);
+            if (!Number.isFinite(numericValue)) {
+                return '';
+            }
+
+            let formatted = numericValue.toFixed(decimals);
+            if (formatted.includes('.')) {
+                formatted = formatted.replace(/\.0+$/, '');
+                formatted = formatted.replace(/(\.\d*?)0+$/, '$1');
+            }
+
+            if (minFractionDigits > 0) {
+                if (!formatted.includes('.')) {
+                    formatted = `${formatted}.${'0'.repeat(minFractionDigits)}`;
+                } else {
+                    const fractionLength = formatted.split('.')[1].length;
+                    if (fractionLength < minFractionDigits) {
+                        formatted = `${formatted}${'0'.repeat(minFractionDigits - fractionLength)}`;
+                    }
+                }
+            }
+
+            return formatted;
+        }
+
+        function getContinuityFieldValue(fieldId, fallbackValue) {
+            const element = document.getElementById(fieldId);
+            const config = CONTINUITY_FIELD_CONFIG[fieldId];
+            const parsed = Number(element.value);
+            if (!Number.isFinite(parsed) || parsed < config.min || parsed > config.max) {
+                return { ok: false, value: fallbackValue, displayValue: formatFixedDecimal(fallbackValue, config.decimals, config.minFractionDigits) };
+            }
+
+            const normalizedValue = Number(parsed.toFixed(config.decimals));
+            return {
+                ok: true,
+                value: normalizedValue,
+                displayValue: formatFixedDecimal(normalizedValue, config.decimals, config.minFractionDigits)
+            };
+        }
+
+        function hydrateContinuityInputs() {
+            const continuityFieldValues = {
+                contLoGood: appState.settings.continuityLoGood ?? DEFAULT_SETTINGS.continuityLoGood,
+                contHiGood: appState.settings.continuityHiGood ?? DEFAULT_SETTINGS.continuityHiGood,
+                contLoOpen: appState.settings.continuityLoOpen ?? DEFAULT_SETTINGS.continuityLoOpen
+            };
+
+            Object.entries(continuityFieldValues).forEach(([fieldId, value]) => {
+                const config = CONTINUITY_FIELD_CONFIG[fieldId];
+                document.getElementById(fieldId).value = formatFixedDecimal(value, config.decimals, config.minFractionDigits);
+            });
+        }
+
         function calcChecksum(cmd, zone, timestamp) {
             const data = `${cmd}:${zone}:${timestamp}`;
             let crc = 0xffffffff;
@@ -671,6 +755,9 @@
                 wsSend({ type: 'client_hello', clientKey: getOrCreateClientKey() });
                 wsSend({ type: 'get_state' });
                 wsSend({ type: 'get_role' });
+                if (appState.serialMonitor.running) {
+                    wsSend({ type: 'serial_monitor', action: 'start' });
+                }
             };
 
             ws.onmessage = (event) => {
@@ -771,6 +858,12 @@
                 case 'factory_reset_result':
                     showToast(msg.msg || 'Factory reset started', 'success');
                     break;
+                case 'serial_monitor_state':
+                    updateSerialMonitorState(msg);
+                    break;
+                case 'serial_log':
+                    appendSerialMonitorLines(msg.lines);
+                    break;
                 case 'estop_active':
                     handleEStopActive();
                     break;
@@ -817,12 +910,15 @@
             }
 
             appState.settings = { ...appState.settings, ...(msg.settings || {}) };
-            appState.auxNames = Array.isArray(msg.auxNames) && msg.auxNames.length >= 2
-                ? msg.auxNames
+            appState.auxNames = Array.isArray(msg.auxNames) && msg.auxNames.length >= DEFAULT_AUX_NAMES.length
+                ? msg.auxNames.slice(0, DEFAULT_AUX_NAMES.length)
                 : [...appState.auxNames];
-            appState.auxState = Array.isArray(msg.auxState) && msg.auxState.length >= 2
-                ? [Boolean(msg.auxState[0]), Boolean(msg.auxState[1])]
+            appState.auxState = Array.isArray(msg.auxState) && msg.auxState.length >= DEFAULT_AUX_NAMES.length
+                ? msg.auxState.slice(0, DEFAULT_AUX_NAMES.length).map((value) => Boolean(value))
                 : appState.auxState;
+            if (typeof msg.serialMonitorRunning === 'boolean') {
+                appState.serialMonitor.running = msg.serialMonitorRunning;
+            }
             if (Array.isArray(msg.zones)) {
                 appState.zones = msg.zones.map((zone, index) => ({
                     ...defaultZone(index),
@@ -931,7 +1027,10 @@
                 appState.wifiConfig.connecting = msg.wifiConnecting;
             }
             if (Array.isArray(msg.auxState) && msg.auxState.length >= 2) {
-                appState.auxState = [Boolean(msg.auxState[0]), Boolean(msg.auxState[1])];
+                appState.auxState = msg.auxState.slice(0, DEFAULT_AUX_NAMES.length).map((value) => Boolean(value));
+            }
+            if (typeof msg.serialMonitorRunning === 'boolean') {
+                appState.serialMonitor.running = msg.serialMonitorRunning;
             }
             renderArmStatus();
             renderEStopButton();
@@ -941,6 +1040,30 @@
             renderStatusOverview();
             renderConnectionIndicator();
             renderShowZones();
+        }
+
+        function updateSerialMonitorState(msg) {
+            appState.serialMonitor.running = Boolean(msg.running);
+            renderSerialMonitor();
+        }
+
+        function appendSerialMonitorLines(lines) {
+            if (!Array.isArray(lines) || lines.length === 0) {
+                return;
+            }
+
+            lines.forEach((entry) => {
+                const text = typeof entry?.text === 'string' ? entry.text : '';
+                if (text.length > 0) {
+                    appState.serialMonitor.lines.push(text);
+                }
+            });
+
+            if (appState.serialMonitor.lines.length > 400) {
+                appState.serialMonitor.lines = appState.serialMonitor.lines.slice(-400);
+            }
+
+            renderSerialMonitorOutput();
         }
 
         function updateShowState(msg) {
@@ -980,21 +1103,36 @@
 
         function handleZoneFired(msg) {
             const zoneId = Number(msg.zone ?? -1);
-            const durationMs = Number(msg.duration ?? 0);
+            const progressDurationMs = Number(msg.progressDuration ?? 0);
+            const igniterDurationMs = Number(msg.igniterDuration ?? 0);
             if (zoneId < 0) {
                 return;
             }
 
+            // Firing action consumes all pending ready windows.
+            readyStateByZone.clear();
+            readyStateByGroup.clear();
+
             readyStateByZone.delete(zoneId);
-            if (durationMs > 0) {
-                firingStateByZone.set(zoneId, Date.now() + durationMs);
+            // Continuity dot expires after igniter duration
+            if (igniterDurationMs > 0) {
+                firingStateByZone.set(zoneId, Date.now() + igniterDurationMs);
+            }
+            // Progress bar runs for the full zone duration
+            if (progressDurationMs > 0) {
+                progressStateByZone.set(zoneId, Date.now() + progressDurationMs);
             }
 
             const zoneInfo = appState.zones.find((zone) => zone.id === zoneId);
             if (zoneInfo && zoneInfo.group > 0) {
                 readyStateByGroup.delete(zoneInfo.group);
-                if (durationMs > 0) {
-                    firingStateByGroup.set(zoneInfo.group, Date.now() + durationMs);
+                // Continuity dot for group expires after igniter duration
+                if (igniterDurationMs > 0) {
+                    firingStateByGroup.set(zoneInfo.group, Date.now() + igniterDurationMs);
+                }
+                // Progress bar for group runs for the full zone duration
+                if (progressDurationMs > 0) {
+                    progressStateByGroup.set(zoneInfo.group, Date.now() + progressDurationMs);
                 }
             }
 
@@ -1086,6 +1224,7 @@
             syncShowMode();
             document.getElementById('showBoardCount').textContent = `${appState.boardCount}`;
             document.getElementById('detectedBoards').textContent = `${appState.boardCount}`;
+            renderSerialMonitor();
         }
 
         function renderArmStatus() {
@@ -1190,14 +1329,45 @@
         }
 
         function renderAuxButtons() {
-            for (let i = 0; i < 2; i++) {
+            for (let i = 0; i < DEFAULT_AUX_NAMES.length; i++) {
                 const button = document.getElementById(`auxToggle${i}`);
+                if (!button) {
+                    continue;
+                }
                 const enabled = appState.auxState[i];
                 const label = appState.auxNames[i] || `Aux ${i + 1}`;
                 button.textContent = `${label} ${enabled ? 'On' : 'Off'}`;
                 button.className = `btn ${enabled ? 'btn-primary' : 'btn-secondary'}`;
                 button.disabled = appState.role !== 'controller';
             }
+        }
+
+        function renderSerialMonitorOutput() {
+            const output = document.getElementById('serialMonitorOutput');
+            if (!output) {
+                return;
+            }
+
+            output.textContent = appState.serialMonitor.lines.length > 0
+                ? appState.serialMonitor.lines.join('\n')
+                : 'No log lines yet.';
+            output.scrollTop = output.scrollHeight;
+        }
+
+        function renderSerialMonitor() {
+            const toggleBtn = document.getElementById('serialMonitorToggleBtn');
+            const status = document.getElementById('serialMonitorStatus');
+            if (!toggleBtn || !status) {
+                return;
+            }
+
+            const running = appState.serialMonitor.running;
+            toggleBtn.textContent = running ? 'Stop Monitor' : 'Start Monitor';
+            toggleBtn.className = `btn ${running ? 'btn-danger' : 'btn-secondary'}`;
+            toggleBtn.disabled = appState.role !== 'controller';
+            status.textContent = running ? 'Running' : 'Stopped';
+            status.className = `serial-monitor-status ${running ? 'is-running' : 'is-stopped'}`;
+            renderSerialMonitorOutput();
         }
 
         function formatCurvePoints(points) {
@@ -1295,9 +1465,7 @@
             document.getElementById('autoDelay').value = appState.settings.autoDelay ?? 0;
             document.getElementById('abortOnDisconnect').checked = Boolean(appState.settings.abortOnDisconnect);
             document.getElementById('eStopResetMode').value = String(appState.settings.eStopResetMode ?? 0);
-            document.getElementById('contLoGood').value = appState.settings.continuityLoGood ?? DEFAULT_SETTINGS.continuityLoGood;
-            document.getElementById('contHiGood').value = appState.settings.continuityHiGood ?? DEFAULT_SETTINGS.continuityHiGood;
-            document.getElementById('contLoOpen').value = appState.settings.continuityLoOpen ?? DEFAULT_SETTINGS.continuityLoOpen;
+            hydrateContinuityInputs();
             document.getElementById('batteryProfile').value = String(appState.settings.batteryProfileId ?? 0);
             document.getElementById('batteryCellCount').value = Number(appState.settings.batteryCellCount ?? DEFAULT_SETTINGS.batteryCellCount);
             document.getElementById('batteryPackMin').value = Number(appState.settings.batteryPackMin ?? DEFAULT_SETTINGS.batteryPackMin);
@@ -1312,9 +1480,14 @@
             }
             renderBatteryProfileDetails();
             if (!builderDirty) {
-                document.getElementById('aux1Name').value = appState.auxNames[0] || DEFAULT_AUX_NAMES[0];
-                document.getElementById('aux2Name').value = appState.auxNames[1] || DEFAULT_AUX_NAMES[1];
+                DEFAULT_AUX_NAMES.forEach((defaultName, index) => {
+                    const element = document.getElementById(`aux${index + 1}Name`);
+                    if (element) {
+                        element.value = appState.auxNames[index] || defaultName;
+                    }
+                });
             }
+            renderSerialMonitor();
         }
 
         function readyPercent(zoneId, nowMs) {
@@ -1330,12 +1503,12 @@
         }
 
         function firingPercent(zoneId, nowMs) {
-            const endsAt = firingStateByZone.get(zoneId);
-            if (!endsAt) {
+            const progressEndsAt = progressStateByZone.get(zoneId);
+            if (!progressEndsAt) {
                 return 0;
             }
             const duration = Math.max(200, Math.round((appState.zones.find((zone) => zone.id === zoneId)?.time || 0) * 1000));
-            const remaining = endsAt - nowMs;
+            const remaining = progressEndsAt - nowMs;
             if (remaining <= 0) {
                 return 0;
             }
@@ -1359,6 +1532,13 @@
                 }
             });
 
+            progressStateByZone.forEach((endsAt, zoneId) => {
+                if (endsAt <= nowMs) {
+                    progressStateByZone.delete(zoneId);
+                    changed = true;
+                }
+            });
+
             readyStateByGroup.forEach((expiresAt, groupId) => {
                 if (expiresAt <= nowMs) {
                     readyStateByGroup.delete(groupId);
@@ -1369,6 +1549,13 @@
             firingStateByGroup.forEach((endsAt, groupId) => {
                 if (endsAt <= nowMs) {
                     firingStateByGroup.delete(groupId);
+                    changed = true;
+                }
+            });
+
+            progressStateByGroup.forEach((endsAt, groupId) => {
+                if (endsAt <= nowMs) {
+                    progressStateByGroup.delete(groupId);
                     changed = true;
                 }
             });
@@ -1447,13 +1634,17 @@
             });
 
             const singleCards = singles.map((zone) => {
-                const continuityClass = CONTINUITY_CLASSES[zone.continuity] || 'unknown';
+                let continuityClass = CONTINUITY_CLASSES[zone.continuity] || 'unknown';
                 const continuityLabel = CONTINUITY_LABELS[zone.continuity] || 'Unknown';
                 const readyPct = readyPercent(zone.id, now);
                 const firingPct = firingPercent(zone.id, now);
+                const igniterActive = (firingStateByZone.get(zone.id) || 0) > now;
                 const canControl = appState.role === 'controller' && appState.masterArmed && !appState.estopActive;
                 const isReady = readyPct > 0;
                 const isRunning = firingPct > 0;
+                if (igniterActive) {
+                    continuityClass = 'firing';
+                }
                 const buttonLabel = !appState.masterArmed
                     ? 'Arm Required'
                     : appState.estopActive
@@ -1487,9 +1678,13 @@
             const groupCards = Array.from(grouped.entries())
                 .sort((left, right) => left[0] - right[0])
                 .map(([groupId, zones]) => {
-                    const zoneIds = zones.map((zone) => zone.id);
-                    const maxDuration = zones.reduce((maxValue, zone) => Math.max(maxValue, Number(zone.time || 0)), 0);
-                    const enabledCount = zones.filter((zone) => zone.enabled).length;
+                    const enabledZones = zones.filter((zone) => zone.enabled);
+                    if (enabledZones.length === 0) {
+                        return '';
+                    }
+
+                    const maxDuration = enabledZones.reduce((maxValue, zone) => Math.max(maxValue, Number(zone.time || 0)), 0);
+                    const enabledCount = enabledZones.length;
                     const readyPct = (() => {
                         const expiresAt = readyStateByGroup.get(groupId);
                         if (!expiresAt) return 0;
@@ -1501,40 +1696,41 @@
                         return Math.max(0, Math.min(100, (remaining / READY_WINDOW_MS) * 100));
                     })();
                     const firingPct = (() => {
-                        const endsAt = firingStateByGroup.get(groupId);
+                        const endsAt = progressStateByGroup.get(groupId);
                         if (!endsAt) return 0;
                         const duration = Math.max(200, Math.round(maxDuration * 1000));
                         const remaining = endsAt - now;
                         if (remaining <= 0) {
-                            firingStateByGroup.delete(groupId);
+                            progressStateByGroup.delete(groupId);
                             return 0;
                         }
                         return Math.max(0, Math.min(100, (remaining / duration) * 100));
                     })();
-                    const allEnabled = zones.every((zone) => zone.enabled);
-                    const canControl = appState.role === 'controller' && appState.masterArmed && allEnabled && !appState.estopActive;
+                    const canControl = appState.role === 'controller' && appState.masterArmed && !appState.estopActive;
                     const isReady = readyPct > 0;
                     const isRunning = firingPct > 0;
-                    const buttonLabel = !allEnabled
-                        ? 'Disabled'
-                        : !appState.masterArmed
-                            ? 'Arm Required'
-                            : appState.estopActive
-                                ? 'E-Stop Active'
-                                : isRunning
-                                    ? '<span class="icon-fire">🔥</span> Running'
-                                    : isReady
-                                        ? '<span class="icon-fire">🔥</span> Fire Group'
-                                        : '<span class="icon-lock">🔒</span> Ready Group';
+                    const buttonLabel = !appState.masterArmed
+                        ? 'Arm Required'
+                        : appState.estopActive
+                            ? 'E-Stop Active'
+                            : isRunning
+                                ? '<span class="icon-fire">🔥</span> Running'
+                                : isReady
+                                    ? '<span class="icon-fire">🔥</span> Fire Group'
+                                    : '<span class="icon-lock">🔒</span> Ready Group';
                     const buttonClass = isRunning ? 'running' : isReady ? 'fire' : 'ready';
 
                     const memberCards = zones
                         .slice()
                         .sort((left, right) => left.order - right.order || left.id - right.id)
                         .map((zone) => {
-                            const continuityClass = CONTINUITY_CLASSES[zone.continuity] || 'unknown';
+                            let continuityClass = CONTINUITY_CLASSES[zone.continuity] || 'unknown';
                             const continuityLabel = CONTINUITY_LABELS[zone.continuity] || 'Unknown';
                             const zoneStateLabel = zone.enabled ? 'Enabled' : 'Disabled';
+                            const igniterActive = (firingStateByZone.get(zone.id) || 0) > now;
+                            if (igniterActive) {
+                                continuityClass = 'firing';
+                            }
                             return `
                                 <div class="group-zone-card ${zone.enabled ? 'is-enabled' : 'is-disabled'}" data-show-zone-id="${zone.id}">
                                     <div class="group-zone-head">
@@ -1625,7 +1821,7 @@
             });
 
             const enabledGroups = Array.from(groupedZones.values())
-                .filter((zones) => zones.length > 0 && zones.every((zone) => zone.enabled))
+                .filter((zones) => zones.some((zone) => zone.enabled))
                 .length;
 
             return { enabledGroups, enabledZones };
@@ -1658,11 +1854,10 @@
                 });
             }
 
-            const aux1 = document.getElementById('aux1Name');
-            const aux2 = document.getElementById('aux2Name');
-            if (aux1 && aux2) {
-                appState.auxNames = [aux1.value, aux2.value];
-            }
+            appState.auxNames = DEFAULT_AUX_NAMES.map((defaultName, index) => {
+                const element = document.getElementById(`aux${index + 1}Name`);
+                return element ? element.value : (appState.auxNames[index] || defaultName);
+            });
         }
 
         function setAllBuilderZonesEnabled(enabled) {
@@ -1722,22 +1917,19 @@
                 }
             });
 
-            const nextAuxNames = [
-                document.getElementById('aux1Name').value.trim(),
-                document.getElementById('aux2Name').value.trim()
-            ];
-            if ((previousAuxNames[0] || '') !== nextAuxNames[0]) {
-                const aux1Ok = wsSend({ type: 'set_aux_name', relay: 0, name: nextAuxNames[0] });
-                if (!aux1Ok) {
+            const nextAuxNames = DEFAULT_AUX_NAMES.map((defaultName, index) => {
+                const element = document.getElementById(`aux${index + 1}Name`);
+                return element ? element.value.trim() : (previousAuxNames[index] || defaultName);
+            });
+            nextAuxNames.forEach((name, index) => {
+                if ((previousAuxNames[index] || '') === name) {
+                    return;
+                }
+                const ok = wsSend({ type: 'set_aux_name', relay: index, name });
+                if (!ok) {
                     failed = true;
                 }
-            }
-            if ((previousAuxNames[1] || '') !== nextAuxNames[1]) {
-                const aux2Ok = wsSend({ type: 'set_aux_name', relay: 1, name: nextAuxNames[1] });
-                if (!aux2Ok) {
-                    failed = true;
-                }
-            }
+            });
 
             if (failed) {
                 showToast('Some builder updates could not be sent', 'error');
@@ -1889,9 +2081,23 @@
                 return;
             }
 
-            wsSend({ type: 'set_setting', key: 'cont_lo_good', value: Number(document.getElementById('contLoGood').value || 0) });
-            wsSend({ type: 'set_setting', key: 'cont_hi_good', value: Number(document.getElementById('contHiGood').value || 0) });
-            wsSend({ type: 'set_setting', key: 'cont_lo_open', value: Number(document.getElementById('contLoOpen').value || 0) });
+            const loGood = getContinuityFieldValue('contLoGood', DEFAULT_SETTINGS.continuityLoGood);
+            const hiGood = getContinuityFieldValue('contHiGood', DEFAULT_SETTINGS.continuityHiGood);
+            const loOpen = getContinuityFieldValue('contLoOpen', DEFAULT_SETTINGS.continuityLoOpen);
+
+            if (!loGood.ok || !hiGood.ok || !loOpen.ok) {
+                showToast('Continuity thresholds must be between 0.0 and 5.0 V', 'error');
+                hydrateContinuityInputs();
+                return;
+            }
+
+            document.getElementById('contLoGood').value = loGood.displayValue;
+            document.getElementById('contHiGood').value = hiGood.displayValue;
+            document.getElementById('contLoOpen').value = loOpen.displayValue;
+
+            wsSend({ type: 'set_setting', key: 'cont_lo_good', value: loGood.value });
+            wsSend({ type: 'set_setting', key: 'cont_hi_good', value: hiGood.value });
+            wsSend({ type: 'set_setting', key: 'cont_lo_open', value: loOpen.value });
             showToast('Continuity thresholds updated', 'success');
         }
 
@@ -1937,12 +2143,26 @@
                 return;
             }
 
-            const elementId = relay === 0 ? 'aux1Name' : 'aux2Name';
+            const elementId = `aux${relay + 1}Name`;
             wsSend({
                 type: 'set_aux_name',
                 relay,
                 name: document.getElementById(elementId).value.trim()
             });
+        }
+
+        function toggleSerialMonitor() {
+            if (!requireControllerAction('control serial monitor')) {
+                return;
+            }
+
+            const action = appState.serialMonitor.running ? 'stop' : 'start';
+            wsSend({ type: 'serial_monitor', action });
+        }
+
+        function clearSerialMonitor() {
+            appState.serialMonitor.lines = [];
+            renderSerialMonitorOutput();
         }
 
         function toggleAuxRelay(relayIndex) {
@@ -2196,9 +2416,13 @@
 
             const now = Date.now();
             const readyUntil = readyStateByZone.get(zoneId) || 0;
-            const runningUntil = firingStateByZone.get(zoneId) || 0;
+            const runningUntil = progressStateByZone.get(zoneId) || 0;
             const isReady = readyUntil > now;
             const isRunning = runningUntil > now;
+
+            if (isRunning) {
+                return;
+            }
 
             if (!isReady && !isRunning) {
                 readyStateByZone.set(zoneId, now + READY_WINDOW_MS);
@@ -2207,7 +2431,8 @@
             }
 
             if (wsSend({ type: 'fire', zone: zoneId })) {
-                readyStateByZone.delete(zoneId);
+                readyStateByZone.clear();
+                readyStateByGroup.clear();
                 const durationMs = Math.max(200, Number(appState.settings.igniterDurationMs || 1000));
                 firingStateByZone.set(zoneId, Date.now() + durationMs);
             }
@@ -2219,16 +2444,20 @@
                 return;
             }
 
-            const groupZones = appState.zones.filter((zone) => zone.group === groupId);
-            if (groupZones.length === 0 || !groupZones.every((zone) => zone.enabled)) {
+            const groupZones = appState.zones.filter((zone) => zone.group === groupId && zone.enabled);
+            if (groupZones.length === 0) {
                 return;
             }
 
             const now = Date.now();
             const readyUntil = readyStateByGroup.get(groupId) || 0;
-            const runningUntil = firingStateByGroup.get(groupId) || 0;
+            const runningUntil = progressStateByGroup.get(groupId) || 0;
             const isReady = readyUntil > now;
             const isRunning = runningUntil > now;
+
+            if (isRunning) {
+                return;
+            }
 
             if (!isReady && !isRunning) {
                 readyStateByGroup.set(groupId, now + READY_WINDOW_MS);
@@ -2237,12 +2466,11 @@
             }
 
             if (wsSend({ type: 'fire_group', group: groupId })) {
-                readyStateByGroup.delete(groupId);
+                readyStateByZone.clear();
+                readyStateByGroup.clear();
                 const durationMs = Math.max(200, Number(appState.settings.igniterDurationMs || 1000));
                 firingStateByGroup.set(groupId, Date.now() + durationMs);
-                appState.zones
-                    .filter((zone) => zone.group === groupId)
-                    .forEach((zone) => firingStateByZone.set(zone.id, Date.now() + durationMs));
+                groupZones.forEach((zone) => firingStateByZone.set(zone.id, Date.now() + durationMs));
             }
             renderShowZones();
         }
@@ -2295,6 +2523,8 @@
             document.getElementById('factoryResetBtn').addEventListener('click', factoryResetDevice);
             document.getElementById('autoStartBtn').addEventListener('click', startAutoShow);
             document.getElementById('autoStopBtn').addEventListener('click', () => wsSend({ type: 'auto_stop' }));
+            document.getElementById('serialMonitorToggleBtn').addEventListener('click', toggleSerialMonitor);
+            document.getElementById('serialMonitorClearBtn').addEventListener('click', clearSerialMonitor);
 
             wireFileDropZone({
                 dropZoneId: 'builderShowDropZone',
@@ -2316,6 +2546,7 @@
 
             document.getElementById('auxToggle0').addEventListener('click', () => toggleAuxRelay(0));
             document.getElementById('auxToggle1').addEventListener('click', () => toggleAuxRelay(1));
+            document.getElementById('auxToggle2').addEventListener('click', () => toggleAuxRelay(2));
 
             document.querySelectorAll('input[name="showMode"]').forEach((radio) => {
                 radio.addEventListener('change', syncShowMode);
@@ -2352,6 +2583,10 @@
                 markBuilderDirty();
             });
             document.getElementById('aux2Name').addEventListener('input', () => {
+                captureBuilderDraftToState();
+                markBuilderDirty();
+            });
+            document.getElementById('aux3Name').addEventListener('input', () => {
                 captureBuilderDraftToState();
                 markBuilderDirty();
             });
@@ -2444,7 +2679,7 @@
         }, 4000);
 
         setInterval(() => {
-            if (readyStateByZone.size === 0 && firingStateByZone.size === 0 && readyStateByGroup.size === 0 && firingStateByGroup.size === 0) {
+            if (readyStateByZone.size === 0 && firingStateByZone.size === 0 && progressStateByZone.size === 0 && readyStateByGroup.size === 0 && firingStateByGroup.size === 0 && progressStateByGroup.size === 0) {
                 return;
             }
             if (pruneInteractionState(Date.now())) {

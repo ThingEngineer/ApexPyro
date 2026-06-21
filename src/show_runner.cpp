@@ -2,6 +2,7 @@
 #include "storage.h"
 #include "relay_manager.h"
 #include "websocket_handler.h"
+#include "logger.h"
 #include <algorithm>
 
 ShowRunner showRunner;
@@ -159,8 +160,10 @@ void ShowRunner::fireCurrentZone() {
 
     if (item.isGroupFire) {
         relayManager.startZonesFire(item.zoneIndices, ignitersOnDuration);
+        uint32_t zoneDurationMs = static_cast<uint32_t>(item.timeSec * 1000.0f);
+        if (zoneDurationMs == 0) { zoneDurationMs = 1; }
         for (size_t idx = 0; idx < item.zoneIndices.size(); idx++) {
-            wsHandler.broadcastZoneFired(item.zoneIndices[idx], static_cast<uint32_t>(item.timeSec * 1000.0f));
+            wsHandler.broadcastZoneFired(item.zoneIndices[idx], zoneDurationMs, static_cast<uint32_t>(ignitersOnDuration));
         }
         Serial.printf("[ShowRunner] Step %u: Group %u firing (%u zones, %.2fs)\n", currentStepIdx + 1, item.groupId, item.zoneIndices.size(), item.timeSec);
         wsHandler.broadcastShowProgress(currentStepIdx + 1, queue.size(), item.zoneIndices.front());
@@ -168,7 +171,9 @@ void ShowRunner::fireCurrentZone() {
         relayManager.startZoneFire(item.zoneIdx, ignitersOnDuration);
         Serial.printf("[ShowRunner] Step %u: Zone %u firing (%.2fs)\n", currentStepIdx + 1, item.zoneIdx, item.timeSec);
         wsHandler.broadcastShowProgress(currentStepIdx + 1, queue.size(), item.zoneIdx);
-        wsHandler.broadcastZoneFired(item.zoneIdx, static_cast<uint32_t>(item.timeSec * 1000.0f));
+        uint32_t zoneDurationMs = static_cast<uint32_t>(item.timeSec * 1000.0f);
+        if (zoneDurationMs == 0) { zoneDurationMs = 1; }
+        wsHandler.broadcastZoneFired(item.zoneIdx, zoneDurationMs, static_cast<uint32_t>(ignitersOnDuration));
     }
 
     wsHandler.broadcastShowState();

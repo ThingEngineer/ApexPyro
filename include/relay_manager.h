@@ -17,7 +17,7 @@ public:
     bool isMasterArmed();
     
     // Aux Relay Control
-    void setAuxRelay(uint8_t relayIdx, bool state);  // 0 or 1
+    void setAuxRelay(uint8_t relayIdx, bool state);  // 0..AUX_RELAY_COUNT-1
     bool getAuxRelayState(uint8_t relayIdx);
     
     // Zone Firing
@@ -44,7 +44,7 @@ public:
 private:
     bool fireJustCompleted;
     bool masterArmed;
-    bool auxState[2];  // AUX relay 1 and 2 states
+    bool auxState[AUX_RELAY_COUNT];
     
     // Firing state
     uint8_t firingZoneIdx;

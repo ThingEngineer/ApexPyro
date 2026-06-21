@@ -7,6 +7,11 @@
 #include <vector>
 #include "config.h"
 
+struct SerialMonitorClientState {
+    uint32_t clientId;
+    uint32_t lastSequence;
+};
+
 class WebSocketHandler {
 public:
     WebSocketHandler();
@@ -19,13 +24,14 @@ public:
     void broadcastContinuity();
     void broadcastBatteryStatus();
     void broadcastWiFiStatus();
-    void broadcastZoneFired(uint8_t zoneIdx, uint32_t duration);
+    void broadcastZoneFired(uint8_t zoneIdx, uint32_t progressDuration, uint32_t igniterDuration);
     void broadcastShowProgress(uint8_t currentStep, uint8_t totalSteps, uint8_t currentZone);
     void broadcastEStop();
     void broadcastError(const char* code, const char* message);
     void broadcastRoleAssignment();
     void broadcastSystemStatus();
     void broadcastShowState();
+    void broadcastSerialMonitorState(uint32_t targetClientId = 0);
     void triggerEmergencyStop(const char* reason = "E-Stop");
     
 private:
@@ -89,6 +95,7 @@ private:
     void handleRelayTestCommand(uint32_t clientId, const char* data);
     void handleClientHello(uint32_t clientId, const char* data);
     void handleRoleLockCommand(uint32_t clientId, const char* data);
+    void handleSerialMonitorCommand(uint32_t clientId, const char* data);
     
     // WebSocket callbacks
     static void onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* client, 
@@ -106,6 +113,10 @@ private:
     void removeViewer(uint32_t clientId);
     String& getOrCreatePayloadBuffer(uint32_t clientId);
     void clearPayloadBuffer(uint32_t clientId);
+    SerialMonitorClientState* findSerialMonitorClient(uint32_t clientId);
+    void removeSerialMonitorClient(uint32_t clientId);
+    bool isSerialMonitorRunning() const;
+    void flushSerialMonitorLines();
 
     // Relay test state
     void startRelayTest();
@@ -121,6 +132,8 @@ private:
     size_t relayTestStepIdx;
     uint32_t relayTestStepStartMs;
     uint32_t relayTestPulseMs;
+    uint32_t lastSerialMonitorFlushMs;
+    std::vector<SerialMonitorClientState> serialMonitorClients;
 };
 
 extern WebSocketHandler wsHandler;

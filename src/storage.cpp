@@ -1,6 +1,8 @@
 #include "storage.h"
 #include <ArduinoJson.h>
 
+#include "logger.h"
+
 // Path for zone persistence; lives in the LittleFS filesystem alongside the UI assets.
 static const char* const ZONES_FILE_PATH = "/zones.json";
 
@@ -86,6 +88,7 @@ void StorageManager::begin() {
     prefs.begin(NVS_KEYS::NS_AUX, false);
     if (!prefs.isKey(NVS_KEYS::AUX_RELAY_1_NAME)) prefs.putString(NVS_KEYS::AUX_RELAY_1_NAME, "Lights");
     if (!prefs.isKey(NVS_KEYS::AUX_RELAY_2_NAME)) prefs.putString(NVS_KEYS::AUX_RELAY_2_NAME, "Music");
+    if (!prefs.isKey(NVS_KEYS::AUX_RELAY_3_NAME)) prefs.putString(NVS_KEYS::AUX_RELAY_3_NAME, "LEDs");
     prefs.end();
 
     // Clear now-unused NVS zone namespace to reclaim flash space.
@@ -612,8 +615,16 @@ void StorageManager::setBatteryCurve(const BatteryCurvePoint* points, uint8_t co
 String StorageManager::getAuxRelayName(uint8_t relayIdx) {
     Preferences prefs;
     prefs.begin(NVS_KEYS::NS_AUX, true);
-    const char* key = (relayIdx == 0) ? NVS_KEYS::AUX_RELAY_1_NAME : NVS_KEYS::AUX_RELAY_2_NAME;
-    String name = prefs.getString(key, (relayIdx == 0) ? "Lights" : "Music");
+    const char* key = NVS_KEYS::AUX_RELAY_1_NAME;
+    const char* fallback = "Lights";
+    if (relayIdx == 1) {
+        key = NVS_KEYS::AUX_RELAY_2_NAME;
+        fallback = "Music";
+    } else if (relayIdx == 2) {
+        key = NVS_KEYS::AUX_RELAY_3_NAME;
+        fallback = "LEDs";
+    }
+    String name = prefs.getString(key, fallback);
     prefs.end();
     return name;
 }
@@ -621,7 +632,12 @@ String StorageManager::getAuxRelayName(uint8_t relayIdx) {
 void StorageManager::setAuxRelayName(uint8_t relayIdx, const String& name) {
     Preferences prefs;
     prefs.begin(NVS_KEYS::NS_AUX, false);
-    const char* key = (relayIdx == 0) ? NVS_KEYS::AUX_RELAY_1_NAME : NVS_KEYS::AUX_RELAY_2_NAME;
+    const char* key = NVS_KEYS::AUX_RELAY_1_NAME;
+    if (relayIdx == 1) {
+        key = NVS_KEYS::AUX_RELAY_2_NAME;
+    } else if (relayIdx == 2) {
+        key = NVS_KEYS::AUX_RELAY_3_NAME;
+    }
     prefs.putString(key, name);
     prefs.end();
 }
@@ -748,6 +764,7 @@ String StorageManager::exportSettingsJson() {
     JsonArray auxNames = doc.createNestedArray("auxNames");
     auxNames.add(getAuxRelayName(0));
     auxNames.add(getAuxRelayName(1));
+    auxNames.add(getAuxRelayName(2));
 
     String jsonStr;
     serializeJson(doc, jsonStr);
@@ -868,6 +885,9 @@ bool StorageManager::importSettingsJson(const String& jsonStr) {
         if (auxNames.size() >= 2) {
             setAuxRelayName(0, auxNames[0].as<String>());
             setAuxRelayName(1, auxNames[1].as<String>());
+            if (auxNames.size() >= 3) {
+                setAuxRelayName(2, auxNames[2].as<String>());
+            }
             appliedAnySetting = true;
         }
     }

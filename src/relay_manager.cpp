@@ -1,5 +1,7 @@
 #include "relay_manager.h"
 
+#include "logger.h"
+
 namespace {
 static const uint8_t REG_OUTPUT_PORT0 = 0x02;
 static const uint8_t REG_OUTPUT_PORT1 = 0x03;
@@ -16,8 +18,9 @@ RelayManager::RelayManager()
     : masterArmed(false), isFiring(false), firingZoneIdx(0),
       firingZoneCount(0), boardPresentCount(0),
       fireJustCompleted(false) {
-    auxState[0] = false;
-    auxState[1] = false;
+    for (uint8_t relayIdx = 0; relayIdx < AUX_RELAY_COUNT; relayIdx++) {
+        auxState[relayIdx] = false;
+    }
     for (uint8_t i = 0; i < MAX_ZONES; i++) {
         firingZones[i] = false;
         zoneFireUntilMs[i] = 0;
@@ -31,8 +34,9 @@ RelayManager::RelayManager()
 void RelayManager::begin() {
     // GPIO pins already initialized in main.cpp boot safety
     setMasterArm(false);
-    setAuxRelay(0, false);
-    setAuxRelay(1, false);
+    for (uint8_t relayIdx = 0; relayIdx < AUX_RELAY_COUNT; relayIdx++) {
+        setAuxRelay(relayIdx, false);
+    }
     setAllRelaysOff();
     
     Serial.println("[RelayManager] Initialized");
@@ -100,17 +104,22 @@ bool RelayManager::isMasterArmed() {
 }
 
 void RelayManager::setAuxRelay(uint8_t relayIdx, bool state) {
-    if (relayIdx > 1) return;
+    if (relayIdx >= AUX_RELAY_COUNT) return;
     
     auxState[relayIdx] = state;
-    int pin = (relayIdx == 0) ? AUX_RELAY_1_PIN : AUX_RELAY_2_PIN;
+    int pin = AUX_RELAY_1_PIN;
+    if (relayIdx == 1) {
+        pin = AUX_RELAY_2_PIN;
+    } else if (relayIdx == 2) {
+        pin = AUX_RELAY_3_PIN;
+    }
     digitalWrite(pin, state ? HIGH : LOW);
     
     Serial.printf("[RelayManager] Aux Relay %u: %s\n", relayIdx, state ? "ON" : "OFF");
 }
 
 bool RelayManager::getAuxRelayState(uint8_t relayIdx) {
-    if (relayIdx > 1) return false;
+    if (relayIdx >= AUX_RELAY_COUNT) return false;
     return auxState[relayIdx];
 }
 

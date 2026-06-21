@@ -89,7 +89,7 @@ public:
     void setBatteryCurve(const BatteryCurvePoint* points, uint8_t count);
     
     // Getters - Aux
-    String getAuxRelayName(uint8_t relayIdx);  // relayIdx = 0 or 1
+    String getAuxRelayName(uint8_t relayIdx);  // relayIdx = 0..AUX_RELAY_COUNT-1
     void setAuxRelayName(uint8_t relayIdx, const String& name);
     
     // Import/Export

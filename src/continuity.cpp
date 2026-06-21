@@ -1,5 +1,6 @@
 #include "continuity.h"
 #include "storage.h"
+#include "logger.h"
 #include "relay_manager.h"
 #include <Wire.h>
 #include <Adafruit_ADS1X15.h>

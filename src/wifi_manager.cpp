@@ -1,6 +1,7 @@
 #include "wifi_manager.h"
 #include "storage.h"
 #include "websocket_handler.h"
+#include "logger.h"
 
 WiFiManager wifiManager;
 
