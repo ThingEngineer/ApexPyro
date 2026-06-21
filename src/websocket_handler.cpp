@@ -901,7 +901,11 @@ void WebSocketHandler::handleAuxCommand(uint32_t clientId, const char* data) {
 }
 
 void WebSocketHandler::handleEStopCommand(uint32_t clientId) {
-    // E-Stop is allowed from any client (emergency override)
+    // E-STOP restricted to controller role only (safety critical operation)
+    if (clientId != controllerClientId) {
+        broadcastError("UNAUTHORIZED", "Only controller can trigger E-Stop");
+        return;
+    }
     triggerEmergencyStop("E-Stop button");
 }
 

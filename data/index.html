@@ -1242,7 +1242,8 @@
 
         function renderEStopButton() {
             const button = document.getElementById('eStopBtn');
-            button.style.display = (appState.masterArmed || appState.estopActive) ? 'inline-flex' : 'none';
+            // E-STOP visible only when armed/active AND user is controller
+            button.style.display = (appState.masterArmed || appState.estopActive) && appState.role === 'controller' ? 'inline-flex' : 'none';
         }
 
         function renderTopBarEmergencyLayout() {
@@ -1303,9 +1304,9 @@
 
         function renderEStopResetButton() {
             const button = document.getElementById('eStopResetBtn');
-            button.style.display = appState.estopActive ? 'inline-flex' : 'none';
+            // Reset button visible only when E-STOP active AND user is controller
+            button.style.display = appState.estopActive && appState.role === 'controller' ? 'inline-flex' : 'none';
             button.textContent = appState.estopResetPending ? 'Confirm Reset' : 'Reset';
-            button.disabled = appState.role !== 'controller';
         }
 
         function renderShowStatePanel() {
