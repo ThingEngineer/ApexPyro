@@ -14,9 +14,11 @@
 
 static uint8_t boardPresentCount = 0;
 static bool boardPresent[3] = {false, false, false};
+static bool boardCommHealthy[MAX_BOARDS] = {false, false, false};
 static bool killSwitchStableState = false;
 static bool killSwitchRawState = false;
 static uint32_t killSwitchLastTransitionMs = 0;
+static bool i2cRuntimeDiagnosticsEnabled = false;
 
 // Relay board register constants
 static const uint8_t REG_OUTPUT_PORT0 = 0x02;  // Relays A0-A7
@@ -24,11 +26,39 @@ static const uint8_t REG_OUTPUT_PORT1 = 0x03;  // Relays B0-B7
 static const uint8_t REG_CONFIG_PORT0 = 0x06;  // 0 = output, 1 = input
 static const uint8_t REG_CONFIG_PORT1 = 0x07;  // 0 = output, 1 = input
 
+int8_t getBoardIndexForAddress(uint8_t address) {
+  for (uint8_t i = 0; i < MAX_BOARDS; i++) {
+    if (BOARD_ADDRS[i] == address) {
+      return static_cast<int8_t>(i);
+    }
+  }
+
+  return -1;
+}
+
 bool writeRegister(uint8_t address, uint8_t reg, uint8_t value) {
   Wire.beginTransmission(address);
   Wire.write(reg);
   Wire.write(value);
-  return Wire.endTransmission() == 0;
+  uint8_t errorCode = Wire.endTransmission();
+
+  if (i2cRuntimeDiagnosticsEnabled) {
+    int8_t boardIndex = getBoardIndexForAddress(address);
+    if (boardIndex >= 0) {
+      bool isHealthy = (errorCode == 0);
+      bool wasHealthy = boardCommHealthy[boardIndex];
+
+      if (!isHealthy && wasHealthy) {
+        Serial.printf("[I2C] PW535 board 0x%02X write failed (reg=0x%02X, err=%u)\n", address, reg, errorCode);
+      } else if (isHealthy && !wasHealthy) {
+        Serial.printf("[I2C] PW535 board 0x%02X communication restored\n", address);
+      }
+
+      boardCommHealthy[boardIndex] = isHealthy;
+    }
+  }
+
+  return errorCode == 0;
 }
 
 void setAllRelaysOffOnBoard(uint8_t address) {
@@ -136,14 +166,17 @@ void setup() {
     uint8_t address = BOARD_ADDRS[i];
     if (initPw535(address)) {
       boardPresent[i] = true;
+      boardCommHealthy[i] = true;
       boardPresentCount++;
       Serial.printf("[BOOT] PW535 initialized at 0x%02X ✓\n", address);
     } else {
       boardPresent[i] = false;
+      boardCommHealthy[i] = false;
       Serial.printf("[BOOT] PW535 init failed at 0x%02X ✗\n", address);
     }
   }
   Serial.printf("[BOOT] %u relay board(s) detected\n", boardPresentCount);
+  i2cRuntimeDiagnosticsEnabled = true;
 
   // ========================================================================
   // Initialize Storage (NVS)

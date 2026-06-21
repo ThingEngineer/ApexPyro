@@ -27,6 +27,7 @@ public:
     
 private:
     bool adsAvailable;
+    uint32_t lastAdsRecoveryAttemptMs;
 
     // Zone status array (48 zones total)
     ContinuityStatus zoneStatus[MAX_ZONES];
@@ -42,6 +43,9 @@ private:
     float threshLoOpen;
     
     // Helper methods
+    bool initializeAds(bool isRecoveryAttempt);
+    bool probeAdsConnection();
+    void handleAdsUnavailable(const char* reason);
     void setMuxPosition(uint8_t position);
     void scanAllZones();
     void readBatteryVoltage();

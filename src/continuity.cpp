@@ -1,6 +1,7 @@
 #include "continuity.h"
 #include "storage.h"
 #include "relay_manager.h"
+#include <Wire.h>
 #include <Adafruit_ADS1X15.h>
 
 // Global ADC instance
@@ -8,11 +9,15 @@ Adafruit_ADS1115 ads;
 
 ContinuityManager continuityManager;
 
+namespace {
+static const uint32_t ADS1115_RECOVERY_RETRY_MS = 1000;
+}
+
 ContinuityManager::ContinuityManager()
-    : adsAvailable(false), lastScanMs(0), lastBatteryScanMs(0), currentMuxPosition(0),
-            threshLoGood(DEFAULT_CONTINUITY_LOW_GOOD),
-            threshHiGood(DEFAULT_CONTINUITY_HI_GOOD),
-            threshLoOpen(DEFAULT_CONTINUITY_LOW_OPEN_CIRCUIT) {
+    : adsAvailable(false), lastAdsRecoveryAttemptMs(0), lastScanMs(0), lastBatteryScanMs(0), currentMuxPosition(0),
+      threshLoGood(DEFAULT_CONTINUITY_LOW_GOOD),
+      threshHiGood(DEFAULT_CONTINUITY_HI_GOOD),
+      threshLoOpen(DEFAULT_CONTINUITY_LOW_OPEN_CIRCUIT) {
     
     // Initialize all zones to unknown
     for (uint8_t i = 0; i < MAX_ZONES; i++) {
@@ -27,24 +32,27 @@ void ContinuityManager::begin() {
     threshHiGood = storage.getContinuityHiGood();
     threshLoOpen = storage.getContinuityLoOpen();
 
-    // Initialize ADC
-    if (!ads.begin(ADS1115_I2C_ADDR)) {
-        Serial.println("[ContinuityManager] ADS1115 not found!");
-        adsAvailable = false;
+    lastAdsRecoveryAttemptMs = millis();
+    if (!initializeAds(false)) {
         return;
     }
-    adsAvailable = true;
-    
-    // Set gain to ±4.096V for all channels
-    ads.setGain(GAIN_ONE);
-    
-    Serial.println("[ContinuityManager] ADS1115 initialized");
+
     Serial.printf("[ContinuityManager] Continuity thresholds: lo_good=%.4fV, hi_good=%.4fV, lo_open=%.4fV\n",
                   threshLoGood, threshHiGood, threshLoOpen);
 }
 
 void ContinuityManager::update() {
     if (!adsAvailable) {
+        uint32_t now = millis();
+        if (now - lastAdsRecoveryAttemptMs >= ADS1115_RECOVERY_RETRY_MS) {
+            lastAdsRecoveryAttemptMs = now;
+            initializeAds(true);
+        }
+        return;
+    }
+
+    if (!probeAdsConnection()) {
+        handleAdsUnavailable("communication lost");
         return;
     }
 
@@ -61,6 +69,46 @@ void ContinuityManager::update() {
         readBatteryVoltage();
         lastBatteryScanMs = now;
     }
+}
+
+bool ContinuityManager::initializeAds(bool isRecoveryAttempt) {
+    if (!ads.begin(ADS1115_I2C_ADDR)) {
+        adsAvailable = false;
+        if (isRecoveryAttempt) {
+            return false;
+        }
+
+        Serial.printf("[ContinuityManager] ADS1115 not found at 0x%02X; continuity scan and battery reads disabled\n",
+                      ADS1115_I2C_ADDR);
+        return false;
+    }
+
+    ads.setGain(GAIN_ONE);
+
+    if (isRecoveryAttempt) {
+        Serial.printf("[ContinuityManager] ADS1115 communication restored at 0x%02X\n", ADS1115_I2C_ADDR);
+    } else {
+        Serial.printf("[ContinuityManager] ADS1115 initialized at 0x%02X\n", ADS1115_I2C_ADDR);
+    }
+
+    adsAvailable = true;
+    return true;
+}
+
+bool ContinuityManager::probeAdsConnection() {
+    Wire.beginTransmission(ADS1115_I2C_ADDR);
+    return Wire.endTransmission() == 0;
+}
+
+void ContinuityManager::handleAdsUnavailable(const char* reason) {
+    if (!adsAvailable) {
+        return;
+    }
+
+    adsAvailable = false;
+    lastAdsRecoveryAttemptMs = millis();
+    Serial.printf("[ContinuityManager] ADS1115 %s at 0x%02X; continuity scan paused\n",
+                  reason, ADS1115_I2C_ADDR);
 }
 
 void ContinuityManager::setMuxPosition(uint8_t position) {
