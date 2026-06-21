@@ -60,6 +60,7 @@ public:
     uint16_t getIgniterDuration();
     uint8_t getAutoDelay();
     bool getAbortOnDisconnect();
+    bool getHideHelpButtons();
     EStopResetMode getEStopResetMode();
     uint8_t getBoardCount();
     float getContinuityLoGood();
@@ -77,6 +78,7 @@ public:
     void setIgniterDuration(uint16_t ms);
     void setAutoDelay(uint8_t sec);
     void setAbortOnDisconnect(bool flag);
+    void setHideHelpButtons(bool hidden);
     void setEStopResetMode(EStopResetMode mode);
     void setBoardCount(uint8_t count);
     void setContinuityThresholds(float loGood, float hiGood, float loOpen);

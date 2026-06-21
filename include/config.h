@@ -53,6 +53,7 @@ static const uint8_t MAX_ZONES = MAX_BOARDS * RELAYS_PER_BOARD;  // 48
 static const uint16_t DEFAULT_IGNITER_DURATION_MS = 2000;  // 2 seconds
 static const uint8_t DEFAULT_AUTO_DELAY_SEC = 0;
 static const bool DEFAULT_ABORT_ON_DISCONNECT = false;
+static const bool DEFAULT_HIDE_HELP_BUTTONS = false;
 static const uint8_t DEFAULT_BOARD_COUNT = 1;
 static const uint8_t DEFAULT_ESTOP_RESET_MODE = 0;  // 0 = two-step, 1 = power cycle, 2 = any confirmation
 
@@ -291,6 +292,7 @@ namespace NVS_KEYS {
     static const char* SETTING_IGNITER_DURATION = "ign_dur";
     static const char* SETTING_AUTO_DELAY = "auto_delay";
     static const char* SETTING_ABORT_ON_DISCONNECT = "abort_disc";
+    static const char* SETTING_HIDE_HELP_BUTTONS = "hide_help";
     static const char* SETTING_ESTOP_RESET_MODE = "estop_mode";
     static const char* SETTING_BOARD_COUNT = "board_cnt";
     static const char* SETTING_CONTINUITY_LO_GOOD = "cont_lo_good";

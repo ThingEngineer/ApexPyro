@@ -454,6 +454,7 @@ void WebSocketHandler::broadcastFullState(uint32_t targetClientId) {
     settings["igniterDurationSec"] = storage.getIgniterDuration() / 1000.0f;
     settings["autoDelay"] = storage.getAutoDelay();
     settings["abortOnDisconnect"] = storage.getAbortOnDisconnect();
+    settings["hideHelpButtons"] = storage.getHideHelpButtons();
     settings["eStopResetMode"] = static_cast<uint8_t>(storage.getEStopResetMode());
     settings["continuityLoGood"] = storage.getContinuityLoGood();
     settings["continuityHiGood"] = storage.getContinuityHiGood();
@@ -1058,6 +1059,8 @@ void WebSocketHandler::handleSettingCommand(uint32_t clientId, const char* data)
         storage.setAutoDelay(static_cast<uint8_t>(delaySec));
     } else if (strcmp(key, NVS_KEYS::SETTING_ABORT_ON_DISCONNECT) == 0) {
         storage.setAbortOnDisconnect(valueAsBool());
+    } else if (strcmp(key, NVS_KEYS::SETTING_HIDE_HELP_BUTTONS) == 0) {
+        storage.setHideHelpButtons(valueAsBool());
     } else if (strcmp(key, NVS_KEYS::SETTING_ESTOP_RESET_MODE) == 0) {
         storage.setEStopResetMode(static_cast<EStopResetMode>(valueAsInt()));
     } else if (strcmp(key, NVS_KEYS::SETTING_BOARD_COUNT) == 0) {

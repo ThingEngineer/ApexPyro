@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>ApexPyro Controller</title>
-    <link rel="stylesheet" href="style.css?v=20260626-settings-layout">
+    <link rel="stylesheet" href="style.css?v=20260627-settings-layout">
 </head>
 
 <body>
@@ -46,6 +46,13 @@
                 <img src="apexpyro-logo.webp" alt="ApexPyro" class="splash-logo">
                 <!-- <h1>ApexPyro</h1> -->
                 <p id="tagline" class="tagline">The Collective Ignition</p>
+                <div class="section-title-row status-overview-title-row">
+                    <h3>Status Overview</h3>
+                    <button class="help-trigger" type="button" data-help-topic="status-overview"
+                        aria-label="Status overview help">
+                        <img src="help.svg" alt="" aria-hidden="true">
+                    </button>
+                </div>
                 <div class="status-bar">
                     <div class="status-item">
                         <svg class="battery-icon" width="16" height="16" viewBox="0 0 16 16" fill="none"
@@ -90,11 +97,23 @@
 
         <!-- Page: Builder -->
         <section id="builder" class="page">
-            <h2>Show Builder</h2>
+            <div class="section-title-row">
+                <h2>Show Builder</h2>
+                <button class="help-trigger" style="margin-bottom: 10px;" type="button"
+                    data-help-topic="builder-overview" aria-label="Show Builder help">
+                    <img src="help.svg" alt="" aria-hidden="true">
+                </button>
+            </div>
             <div class="builder-content">
                 <div class="zones-section">
                     <div class="zones-header">
-                        <h3>Zones</h3>
+                        <div class="title-with-help">
+                            <h3>Zones</h3>
+                            <button class="help-trigger" type="button" data-help-topic="builder-zones"
+                                aria-label="Builder zones help">
+                                <img src="help.svg" alt="" aria-hidden="true">
+                            </button>
+                        </div>
                         <div class="builder-bulk-actions">
                             <button id="enableAllBtn" class="btn btn-secondary" type="button">Enable All</button>
                             <button id="disableAllBtn" class="btn btn-secondary" type="button">Disable All</button>
@@ -104,7 +123,12 @@
                 </div>
                 <div class="builder-footer">
                     <details class="aux-section" id="auxSectionDetails">
-                        <summary>Auxiliary Relays</summary>
+                        <summary><span>Auxiliary Relays</span>
+                            <button class="help-trigger summary-help-trigger" type="button"
+                                data-help-topic="builder-aux-relays" aria-label="Auxiliary relays help">
+                                <img src="help.svg" alt="" aria-hidden="true">
+                            </button>
+                        </summary>
                         <div class="aux-input">
                             <label>Aux 1 Name:</label>
                             <input type="text" id="aux1Name" placeholder="Lights">
@@ -119,7 +143,12 @@
                         </div>
                     </details>
                     <details class="aux-section" id="showManagementDetails">
-                        <summary>Show Management</summary>
+                        <summary><span>Show Management</span>
+                            <button class="help-trigger summary-help-trigger" type="button"
+                                data-help-topic="builder-show-management" aria-label="Show management help">
+                                <img src="help.svg" alt="" aria-hidden="true">
+                            </button>
+                        </summary>
                         <div class="builder-show-actions">
                             <button id="builderShowExportBtn" class="btn btn-secondary" type="button">Export Show
                                 Config</button>
@@ -152,11 +181,23 @@
 
         <!-- Page: Show -->
         <section id="show" class="page">
-            <h2>Show Mode</h2>
+            <div class="section-title-row">
+                <h2>Show Mode</h2>
+                <button class="help-trigger" style="margin-bottom: 10px;" type="button" data-help-topic="show-overview"
+                    aria-label="Show mode help">
+                    <img src="help.svg" alt="" aria-hidden="true">
+                </button>
+            </div>
             <div class="show-content">
                 <!-- Master Arm Section -->
                 <div class="master-control card">
-                    <h3>Master Arm</h3>
+                    <div class="section-title-row">
+                        <h3>Master Arm</h3>
+                        <button class="help-trigger" type="button" data-help-topic="show-master-arm"
+                            aria-label="Master arm help">
+                            <img src="help.svg" alt="" aria-hidden="true">
+                        </button>
+                    </div>
                     <p class="muted">Engages igniter power relay</p>
                     <div class="arm-status" id="armStatus">DISARMED</div>
                     <label class="switch">
@@ -167,7 +208,13 @@
 
                 <!-- System Status -->
                 <div class="system-status card">
-                    <h3>System Status</h3>
+                    <div class="section-title-row">
+                        <h3>System Status</h3>
+                        <button class="help-trigger" type="button" data-help-topic="show-system-status"
+                            aria-label="System status help">
+                            <img src="help.svg" alt="" aria-hidden="true">
+                        </button>
+                    </div>
                     <div class="status-grid">
                         <div class="status-item-full">
                             <span class="label">Battery:</span>
@@ -187,7 +234,13 @@
 
                 <!-- Show Mode Selection -->
                 <div class="show-mode-selector card">
-                    <h3>Mode</h3>
+                    <div class="section-title-row">
+                        <h3>Mode</h3>
+                        <button class="help-trigger" type="button" data-help-topic="show-mode"
+                            aria-label="Show mode selection help">
+                            <img src="help.svg" alt="" aria-hidden="true">
+                        </button>
+                    </div>
                     <div class="radio-group">
                         <label>
                             <input type="radio" name="showMode" value="manual" checked>
@@ -202,7 +255,13 @@
 
                 <!-- Auto Show Panel (hidden by default) -->
                 <div id="autoShowPanel" class="auto-show-panel card" style="display: none;">
-                    <h3>Auto Show</h3>
+                    <div class="section-title-row">
+                        <h3>Auto Show</h3>
+                        <button class="help-trigger" type="button" data-help-topic="show-auto"
+                            aria-label="Auto show help">
+                            <img src="help.svg" alt="" aria-hidden="true">
+                        </button>
+                    </div>
                     <button id="autoStartBtn" class="btn btn-primary">Start Auto Show</button>
                     <button id="autoStopBtn" class="btn btn-danger" style="display: none;">Stop Auto Show</button>
                     <div id="showProgressDiv" style="display: none;">
@@ -211,11 +270,29 @@
                     </div>
                 </div>
 
+                <div class="zone-group-help card">
+                    <div class="section-title-row">
+                        <h3>Zones and Groups</h3>
+                        <button class="help-trigger" type="button" data-help-topic="show-zones-groups"
+                            aria-label="Zones and groups help">
+                            <img src="help.svg" alt="" aria-hidden="true">
+                        </button>
+                    </div>
+                    <p class="muted">Groups fire all enabled member zones together. Group run timing follows the longest
+                        zone in that group.</p>
+                </div>
+
                 <!-- Zones Grid -->
                 <div class="zones-grid" id="showZoneGrid"></div>
 
                 <div class="aux-controls card">
-                    <h3>Auxiliary Controls</h3>
+                    <div class="section-title-row">
+                        <h3>Auxiliary Controls</h3>
+                        <button class="help-trigger" type="button" data-help-topic="show-aux-controls"
+                            aria-label="Auxiliary controls help">
+                            <img src="help.svg" alt="" aria-hidden="true">
+                        </button>
+                    </div>
                     <div class="aux-button-row">
                         <button id="auxToggle0" class="btn btn-secondary" data-relay="0">Aux 1 Off</button>
                         <button id="auxToggle1" class="btn btn-secondary" data-relay="1">Aux 2 Off</button>
@@ -227,12 +304,24 @@
 
         <!-- Page: Settings -->
         <section id="settings" class="page">
-            <h2>Settings</h2>
+            <div class="section-title-row">
+                <h2>Settings</h2>
+                <button class="help-trigger" style="margin-bottom: 10px;" type="button"
+                    data-help-topic="settings-overview" aria-label="Settings help">
+                    <img src="help.svg" alt="" aria-hidden="true">
+                </button>
+            </div>
             <div class="settings-content">
 
                 <!-- WiFi Section -->
                 <div class="settings-section card">
-                    <h3>WiFi</h3>
+                    <div class="section-title-row">
+                        <h3>WiFi</h3>
+                        <button class="help-trigger" type="button" data-help-topic="settings-wifi"
+                            aria-label="WiFi settings help">
+                            <img src="help.svg" alt="" aria-hidden="true">
+                        </button>
+                    </div>
 
                     <!-- Hosted AP sub-section -->
                     <div class="wifi-sub">
@@ -276,7 +365,13 @@
 
                 <!-- Igniter Settings -->
                 <div class="settings-section card">
-                    <h3>Igniter Configuration</h3>
+                    <div class="section-title-row">
+                        <h3>Igniter Configuration</h3>
+                        <button class="help-trigger" type="button" data-help-topic="settings-igniter"
+                            aria-label="Igniter settings help">
+                            <img src="help.svg" alt="" aria-hidden="true">
+                        </button>
+                    </div>
                     <div class="setting-group">
                         <label>Igniter Duration (seconds):</label>
                         <input type="number" id="igniterDuration" min="0.1" max="10" step="0.1" value="2">
@@ -290,7 +385,13 @@
 
                 <!-- Board Configuration -->
                 <div class="settings-section card">
-                    <h3>Board Configuration</h3>
+                    <div class="section-title-row">
+                        <h3>Board Configuration</h3>
+                        <button class="help-trigger" type="button" data-help-topic="settings-board"
+                            aria-label="Board configuration help">
+                            <img src="help.svg" alt="" aria-hidden="true">
+                        </button>
+                    </div>
                     <div class="setting-group">
                         <label>Detected Boards:</label>
                         <p id="detectedBoards">—</p>
@@ -299,7 +400,13 @@
 
                 <!-- Safety Settings -->
                 <div class="settings-section card">
-                    <h3>Safety Settings</h3>
+                    <div class="section-title-row">
+                        <h3>Safety Settings</h3>
+                        <button class="help-trigger" type="button" data-help-topic="settings-safety"
+                            aria-label="Safety settings help">
+                            <img src="help.svg" alt="" aria-hidden="true">
+                        </button>
+                    </div>
                     <div class="setting-group">
                         <label>
                             <input type="checkbox" id="abortOnDisconnect">
@@ -318,7 +425,13 @@
 
                 <!-- Continuity Calibration -->
                 <div class="settings-section card">
-                    <h3>Igninter Continuity Calibration</h3>
+                    <div class="section-title-row">
+                        <h3>Igninter Continuity Calibration</h3>
+                        <button class="help-trigger" type="button" data-help-topic="settings-continuity"
+                            aria-label="Continuity calibration help">
+                            <img src="help.svg" alt="" aria-hidden="true">
+                        </button>
+                    </div>
                     <p class="muted">Voltage thresholds for e-match detection</p>
                     <div class="setting-group">
                         <label>Short Threshold (V):</label>
@@ -336,7 +449,13 @@
                 </div>
 
                 <div class="settings-section card">
-                    <h3>Battery Charge State Monitoring</h3>
+                    <div class="section-title-row">
+                        <h3>Battery Charge State Monitoring</h3>
+                        <button class="help-trigger" type="button" data-help-topic="settings-battery"
+                            aria-label="Battery monitoring help">
+                            <img src="help.svg" alt="" aria-hidden="true">
+                        </button>
+                    </div>
                     <p class="muted">Configure chemistry-specific voltage-to-charge mapping for battery percent display.
                     </p>
                     <div class="setting-group">
@@ -412,13 +531,25 @@
 
                 <!-- Relay Test -->
                 <div class="settings-section card">
-                    <h3>Hardware Test</h3>
+                    <div class="section-title-row">
+                        <h3>Hardware Test</h3>
+                        <button class="help-trigger" type="button" data-help-topic="settings-hardware-test"
+                            aria-label="Hardware test help">
+                            <img src="help.svg" alt="" aria-hidden="true">
+                        </button>
+                    </div>
                     <p class="muted">Sequential relay test (requires Armed state)</p>
                     <button id="relayTestBtn" class="btn btn-secondary">Run Relay Test</button>
                 </div>
 
                 <div class="settings-section card serial-monitor-section">
-                    <h3>ESP32 Serial Monitor</h3>
+                    <div class="section-title-row">
+                        <h3>ESP32 Serial Monitor</h3>
+                        <button class="help-trigger" type="button" data-help-topic="settings-serial-monitor"
+                            aria-label="Serial monitor help">
+                            <img src="help.svg" alt="" aria-hidden="true">
+                        </button>
+                    </div>
                     <p class="muted serial-monitor-warning">Not recommended during a live show. Streaming logs can
                         add extra traffic and may bog down communication with the device.</p>
                     <div class="serial-monitor-toolbar">
@@ -431,7 +562,13 @@
                 </div>
 
                 <div class="settings-section card">
-                    <h3>Settings Management</h3>
+                    <div class="section-title-row">
+                        <h3>Settings Management</h3>
+                        <button class="help-trigger" type="button" data-help-topic="settings-management"
+                            aria-label="Settings management help">
+                            <img src="help.svg" alt="" aria-hidden="true">
+                        </button>
+                    </div>
                     <p class="muted">Export or import user-configurable settings only. WiFi credentials and show data
                         are excluded.</p>
                     <button id="settingsExportBtn" class="btn btn-secondary" type="button">Export Settings</button>
@@ -449,6 +586,24 @@
                     </div>
                     <hr class="wifi-divider">
                     <button id="factoryResetBtn" class="btn btn-danger" type="button">Reset To Factory Defaults</button>
+                </div>
+
+                <div class="settings-section card">
+                    <div class="section-title-row">
+                        <h3>UI Preferences</h3>
+                        <button class="help-trigger" type="button" data-help-topic="settings-ui-preferences"
+                            aria-label="UI preferences help">
+                            <img src="help.svg" alt="" aria-hidden="true">
+                        </button>
+                    </div>
+                    <div class="setting-group">
+                        <label>
+                            <input type="checkbox" id="hideHelpButtons">
+                            Hide help buttons from the interface
+                        </label>
+                        <p class="muted">Hides all question-mark help buttons on every page for cleaner operation views.
+                        </p>
+                    </div>
                 </div>
             </div>
         </section>
@@ -479,6 +634,18 @@
         </div>
     </div>
 
+    <div id="helpModal" class="help-modal-overlay" style="display: none;" aria-hidden="true">
+        <div class="help-modal-shell" role="dialog" aria-modal="true" aria-labelledby="helpModalTitle">
+            <button id="helpModalCloseTop" class="help-modal-close-top" type="button" aria-label="Close help">✕</button>
+            <div class="help-modal-content">
+                <h2 id="helpModalTitle">Help</h2>
+                <div id="helpModalBody" class="help-modal-body"></div>
+            </div>
+            <button id="helpModalCloseBottom" class="btn btn-secondary help-modal-close-bottom" type="button">Close
+                Help</button>
+        </div>
+    </div>
+
     <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
     <!-- Embedded CSS (will be in style.css file) -->
@@ -506,6 +673,7 @@
             igniterDurationSec: 2,
             autoDelay: 0,
             abortOnDisconnect: false,
+            hideHelpButtons: false,
             eStopResetMode: 0,
             continuityLoGood: 0.0001,
             continuityHiGood: 0.015,
@@ -537,6 +705,218 @@
                 packMax: 58.4,
                 lowWarn: 46.0,
                 samplePoints: []
+            }
+        };
+
+        const HELP_TOPICS = {
+            'status-overview': {
+                title: 'Status Overview',
+                intro: 'This page is your quick health check before and during setup.',
+                bullets: [
+                    'Master Arm shows whether igniter power is available.',
+                    'E-Stop shows if firing is blocked.',
+                    'AP/STA Mode shows hosted AP status and client WiFi state.',
+                    'Enabled Groups / Zones helps confirm what is ready to run.'
+                ]
+            },
+            'builder-overview': {
+                title: 'Show Builder',
+                intro: 'Use Builder to create your firing plan before going live.',
+                bullets: [
+                    'Each zone stores description, time, enabled state, group, and order.',
+                    'Enable All and Disable All are bulk shortcuts for zone readiness.',
+                    'Save Builder Changes writes updates to the controller.',
+                    'Clear All / Reset clears all zone plan data back to defaults.'
+                ]
+            },
+            'builder-zones': {
+                title: 'Builder Zones',
+                intro: 'Zones are the basic firing units. Groups let zones fire together.',
+                bullets: [
+                    'Group None means the zone fires as a single.',
+                    'Zones sharing the same group number run together from Show Mode.',
+                    'Order controls auto-show sequence placement.',
+                    'Zone time is used for auto-show pacing and progress timing.'
+                ]
+            },
+            'builder-aux-relays': {
+                title: 'Auxiliary Relays',
+                intro: 'Aux relays control non-ignition outputs like lights or music triggers.',
+                bullets: [
+                    'Set names here to keep Show Mode labels meaningful.',
+                    'Names are synced to the Auxiliary Controls card in Show Mode.',
+                    'Aux outputs are independent of zone ignition timing.'
+                ]
+            },
+            'builder-show-management': {
+                title: 'Show Management',
+                intro: 'Export and import full show configurations from JSON files.',
+                bullets: [
+                    'Export saves current zones, groups, and ordering for backup.',
+                    'Import replaces current show data with the selected file.',
+                    'Use this to move shows between controllers or restore a known plan.'
+                ]
+            },
+            'show-overview': {
+                title: 'Show Mode',
+                intro: 'Show Mode is where live control and execution happen.',
+                bullets: [
+                    'Manual mode uses Ready then Fire for deliberate per-action confirmation.',
+                    'Auto mode follows zone order and configured timings.',
+                    'Controller role is required for arming, firing, and relay control.'
+                ]
+            },
+            'show-master-arm': {
+                title: 'Master Arm',
+                intro: 'Master Arm enables igniter power so firing commands can execute.',
+                bullets: [
+                    'When armed, E-STOP appears in the sticky header for immediate shutdown.',
+                    'If E-Stop is active, reset is required before re-arming.',
+                    'Disarmed state blocks all firing actions.'
+                ]
+            },
+            'show-system-status': {
+                title: 'System Status',
+                intro: 'This card summarizes battery, WiFi signal, and relay board detection.',
+                bullets: [
+                    'Battery is estimated from voltage and your selected profile curve.',
+                    'WiFi includes signal strength and connection context.',
+                    'Detected board count helps verify hardware before firing.'
+                ]
+            },
+            'show-mode': {
+                title: 'Manual vs Auto Mode',
+                intro: 'Choose how the controller executes your show.',
+                bullets: [
+                    'Manual mode lets you trigger zones or groups directly.',
+                    'Auto mode steps through enabled zones by order and timing.',
+                    'Abort-on-disconnect behavior is controlled in Safety Settings.'
+                ]
+            },
+            'show-auto': {
+                title: 'Auto Show Controls',
+                intro: 'Auto Show runs enabled zones in sequence and displays progress.',
+                bullets: [
+                    'Start begins sequence execution from ordered enabled zones.',
+                    'Stop halts active auto execution.',
+                    'Progress shows current step and completion percentage.'
+                ]
+            },
+            'show-zones-groups': {
+                title: 'Zones and Groups',
+                intro: 'Singles and groups can both be fired from this page.',
+                bullets: [
+                    'All enabled zones in a group fire together on group fire.',
+                    'Group progress duration uses the maximum zone duration in that group.',
+                    'Ready state times out, so tap Ready then Fire intentionally.'
+                ]
+            },
+            'show-aux-controls': {
+                title: 'Auxiliary Controls',
+                intro: 'These buttons toggle non-ignition relays during setup or show operation.',
+                bullets: [
+                    'Names come from Builder > Auxiliary Relays.',
+                    'Aux states are shown and synchronized across connected clients.',
+                    'Controller role is required to toggle outputs.'
+                ]
+            },
+            'settings-overview': {
+                title: 'Settings Overview',
+                intro: 'Settings tune controller behavior, safety, and monitoring.',
+                bullets: [
+                    'Changes are stored on the controller and restored after reboot.',
+                    'Some settings apply immediately while others affect future actions.',
+                    'Use Settings Management to export/import configuration backups.'
+                ]
+            },
+            'settings-wifi': {
+                title: 'WiFi Settings',
+                intro: 'Configure hosted AP (Access Point) access and optional external network client mode.',
+                bullets: [
+                    'Hosted AP keeps a direct local access path to the controller.',
+                    'Client mode connects through your local network infrastructure.',
+                    'Forget Network clears saved client credentials and falls back to AP usage.'
+                ]
+            },
+            'settings-igniter': {
+                title: 'Igniter Configuration',
+                intro: 'These values define firing pulse behavior and auto pacing.',
+                bullets: [
+                    'Igniter Duration controls pulse time per fire command.',
+                    'Auto Delay adds spacing between automatic steps.',
+                    'Use conservative timing while validating hardware behavior.'
+                ]
+            },
+            'settings-board': {
+                title: 'Board Configuration',
+                intro: 'Detected board count confirms connected relay hardware.',
+                bullets: [
+                    'Use this as a quick sanity check before arming.',
+                    'Unexpected counts can indicate wiring or I2C issues.'
+                ]
+            },
+            'settings-safety': {
+                title: 'Safety Settings',
+                intro: 'Safety options control automatic stop behavior and E-Stop reset policy.',
+                bullets: [
+                    'Abort on Disconnect can stop an auto show if connection drops.',
+                    'E-Stop reset mode defines how recovery confirmation is allowed.',
+                    'Use stricter modes when operating in higher-risk environments.'
+                ]
+            },
+            'settings-continuity': {
+                title: 'Continuity Calibration',
+                intro: 'Voltage thresholds classify each zone continuity reading.',
+                bullets: [
+                    'Short threshold marks low-voltage short conditions.',
+                    'Good threshold marks expected e-match continuity range.',
+                    'Open threshold marks open-circuit conditions.'
+                ]
+            },
+            'settings-battery': {
+                title: 'Battery Charge State Monitoring',
+                intro: 'Battery percent is estimated from voltage using a voltage-to-SoC (State of Charge) lookup curve.',
+                bullets: [
+                    'Preset chemistries use tuned point tables for the selected profile.',
+                    'Custom mode lets you define your own voltage,SoC curve points.',
+                    'Resolved values show the active pack min/max, warning threshold, and sample interval.',
+                    'Percent reflects interpolation between curve points, not coulomb counting.'
+                ]
+            },
+            'settings-hardware-test': {
+                title: 'Hardware Test',
+                intro: 'Runs a sequential relay test to verify wiring and board control.',
+                bullets: [
+                    'Requires armed state before starting.',
+                    'Use in controlled conditions only.',
+                    'Stop test if unexpected behavior is observed.'
+                ]
+            },
+            'settings-serial-monitor': {
+                title: 'ESP32 Serial Monitor',
+                intro: 'Streams firmware logs into the browser for troubleshooting.',
+                bullets: [
+                    'Useful for diagnostics during setup and development.',
+                    'Avoid running during live operation to reduce extra traffic.',
+                    'Clear only clears browser view, not device-side logs.'
+                ]
+            },
+            'settings-management': {
+                title: 'Settings Management',
+                intro: 'Back up and restore user-configurable controller settings.',
+                bullets: [
+                    'WiFi credentials and show data are intentionally excluded.',
+                    'Import applies values from the selected JSON file.',
+                    'Factory reset restores defaults and reboots the controller.'
+                ]
+            },
+            'settings-ui-preferences': {
+                title: 'UI Preferences',
+                intro: 'Control interface-only options for operator workflow.',
+                bullets: [
+                    'Hide help buttons removes question-mark triggers globally.',
+                    'This preference is shared from controller state to connected view-only clients.'
+                ]
             }
         };
 
@@ -1222,9 +1602,55 @@
             renderStatusOverview();
             renderConnectionIndicator();
             syncShowMode();
+            renderHelpButtonsVisibility();
             document.getElementById('showBoardCount').textContent = `${appState.boardCount}`;
             document.getElementById('detectedBoards').textContent = `${appState.boardCount}`;
             renderSerialMonitor();
+        }
+
+        function renderHelpTopic(topicId) {
+            const topic = HELP_TOPICS[topicId] || {
+                title: 'Help',
+                intro: 'No help topic is available for this section yet.',
+                bullets: []
+            };
+
+            document.getElementById('helpModalTitle').textContent = topic.title;
+            const body = document.getElementById('helpModalBody');
+
+            const introHtml = `<p>${escapeHtml(topic.intro)}</p>`;
+            const bulletsHtml = Array.isArray(topic.bullets) && topic.bullets.length > 0
+                ? `<ul>${topic.bullets.map((bullet) => `<li>${escapeHtml(bullet)}</li>`).join('')}</ul>`
+                : '';
+
+            body.innerHTML = `${introHtml}${bulletsHtml}`;
+        }
+
+        function closeHelpModal() {
+            const modal = document.getElementById('helpModal');
+            modal.style.display = 'none';
+            modal.setAttribute('aria-hidden', 'true');
+            document.body.classList.remove('help-modal-open');
+        }
+
+        function openHelpTopic(topicId) {
+            if (appState.settings.hideHelpButtons) {
+                return;
+            }
+
+            renderHelpTopic(topicId);
+            const modal = document.getElementById('helpModal');
+            modal.style.display = 'block';
+            modal.setAttribute('aria-hidden', 'false');
+            document.body.classList.add('help-modal-open');
+        }
+
+        function renderHelpButtonsVisibility() {
+            const hidden = Boolean(appState.settings.hideHelpButtons);
+            document.body.classList.toggle('help-buttons-hidden', hidden);
+            if (hidden) {
+                closeHelpModal();
+            }
         }
 
         function renderArmStatus() {
@@ -1465,6 +1891,7 @@
             document.getElementById('igniterDuration').value = Number(appState.settings.igniterDurationSec ?? 2).toFixed(1).replace(/\.0$/, '');
             document.getElementById('autoDelay').value = appState.settings.autoDelay ?? 0;
             document.getElementById('abortOnDisconnect').checked = Boolean(appState.settings.abortOnDisconnect);
+            document.getElementById('hideHelpButtons').checked = Boolean(appState.settings.hideHelpButtons);
             document.getElementById('eStopResetMode').value = String(appState.settings.eStopResetMode ?? 0);
             hydrateContinuityInputs();
             document.getElementById('batteryProfile').value = String(appState.settings.batteryProfileId ?? 0);
@@ -1489,6 +1916,7 @@
                 });
             }
             renderSerialMonitor();
+            renderHelpButtonsVisibility();
         }
 
         function readyPercent(zoneId, nowMs) {
@@ -2077,6 +2505,24 @@
             });
         }
 
+        function saveUiPreferences() {
+            if (!requireControllerAction('save UI preferences')) {
+                document.getElementById('hideHelpButtons').checked = Boolean(appState.settings.hideHelpButtons);
+                return;
+            }
+
+            const hideHelpButtons = document.getElementById('hideHelpButtons').checked;
+            appState.settings.hideHelpButtons = hideHelpButtons;
+            renderHelpButtonsVisibility();
+
+            wsSend({
+                type: 'set_setting',
+                key: 'hide_help',
+                value: hideHelpButtons ? 1 : 0
+            });
+            showToast('UI preferences saved', 'success');
+        }
+
         function saveContinuityThresholds() {
             if (!requireControllerAction('save continuity thresholds')) {
                 return;
@@ -2507,6 +2953,7 @@
             document.getElementById('saveIgniterBtn').addEventListener('click', saveIgniterSettings);
             document.getElementById('abortOnDisconnect').addEventListener('change', saveSafetySettings);
             document.getElementById('eStopResetMode').addEventListener('change', saveSafetySettings);
+            document.getElementById('hideHelpButtons').addEventListener('change', saveUiPreferences);
             document.getElementById('calibrateBtn').addEventListener('click', saveContinuityThresholds);
             document.getElementById('batteryProfile').addEventListener('change', () => {
                 appState.settings.batteryProfileId = Number(document.getElementById('batteryProfile').value || 0);
@@ -2606,6 +3053,35 @@
                     return;
                 }
                 fireZone(Number(button.dataset.zoneId));
+            });
+
+            document.addEventListener('click', (event) => {
+                const helpTrigger = event.target.closest('.help-trigger');
+                if (helpTrigger) {
+                    if (helpTrigger.classList.contains('summary-help-trigger')) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                    }
+                    openHelpTopic(helpTrigger.dataset.helpTopic);
+                    return;
+                }
+
+                const closeButton = event.target.closest('#helpModalCloseTop, #helpModalCloseBottom');
+                if (closeButton) {
+                    closeHelpModal();
+                }
+            });
+
+            document.getElementById('helpModal').addEventListener('click', (event) => {
+                if (event.target.id === 'helpModal') {
+                    closeHelpModal();
+                }
+            });
+
+            document.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') {
+                    closeHelpModal();
+                }
             });
         }
 
