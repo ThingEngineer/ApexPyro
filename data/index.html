@@ -421,6 +421,12 @@
                             <option value="2">One-step software confirmation</option>
                         </select>
                     </div>
+                    <div class="setting-group">
+                        <label>
+                            <input type="checkbox" id="disarmOnReloadOrDrop">
+                            Disarm Master Arm on page reload or client drop
+                        </label>
+                    </div>
                 </div>
 
                 <!-- Continuity Calibration -->
@@ -673,6 +679,7 @@
             igniterDurationSec: 2,
             autoDelay: 0,
             abortOnDisconnect: false,
+            disarmOnReloadOrDrop: true,
             hideHelpButtons: false,
             eStopResetMode: 0,
             continuityLoGood: 0.0001,
@@ -861,6 +868,7 @@
                 bullets: [
                     'Abort on Disconnect can stop an auto show if connection drops.',
                     'E-Stop reset mode defines how recovery confirmation is allowed.',
+                    'Disarm Master Arm on reload/drop controls whether controller loss disarms the arm relay.',
                     'Use stricter modes when operating in higher-risk environments.'
                 ]
             },
@@ -1893,6 +1901,7 @@
             document.getElementById('abortOnDisconnect').checked = Boolean(appState.settings.abortOnDisconnect);
             document.getElementById('hideHelpButtons').checked = Boolean(appState.settings.hideHelpButtons);
             document.getElementById('eStopResetMode').value = String(appState.settings.eStopResetMode ?? 0);
+            document.getElementById('disarmOnReloadOrDrop').checked = Boolean(appState.settings.disarmOnReloadOrDrop);
             hydrateContinuityInputs();
             document.getElementById('batteryProfile').value = String(appState.settings.batteryProfileId ?? 0);
             document.getElementById('batteryCellCount').value = Number(appState.settings.batteryCellCount ?? DEFAULT_SETTINGS.batteryCellCount);
@@ -2454,7 +2463,11 @@
             showConfirm(
                 'Forget Network',
                 `Remove credentials for "${appState.wifiConfig.clientSsid || 'saved network'}" and re-enable the hosted access point?`,
-                () => wsSend({ type: 'wifi_forget' })
+                () => {
+                    if (wsSend({ type: 'wifi_forget' })) {
+                        showToast('WiFi credentials cleared', 'success');
+                    }
+                }
             );
         }
 
@@ -2503,6 +2516,12 @@
                 key: 'estop_mode',
                 value: Number(document.getElementById('eStopResetMode').value || 0)
             });
+            wsSend({
+                type: 'set_setting',
+                key: 'disarm_drop',
+                value: document.getElementById('disarmOnReloadOrDrop').checked ? 1 : 0
+            });
+            showToast('Safety settings saved', 'success');
         }
 
         function saveUiPreferences() {
@@ -2591,11 +2610,13 @@
             }
 
             const elementId = `aux${relay + 1}Name`;
-            wsSend({
+            if (wsSend({
                 type: 'set_aux_name',
                 relay,
                 name: document.getElementById(elementId).value.trim()
-            });
+            })) {
+                showToast('Aux relay name saved', 'success');
+            }
         }
 
         function toggleSerialMonitor() {
@@ -2803,7 +2824,10 @@
             if (!requireControllerAction('change role lock')) {
                 return;
             }
-            wsSend({ type: 'set_role_lock', locked: !(appState.roleLocked !== false) });
+            const nextLocked = !(appState.roleLocked !== false);
+            if (wsSend({ type: 'set_role_lock', locked: nextLocked })) {
+                showToast(`Controller role lock ${nextLocked ? 'enabled' : 'disabled'}`, 'success');
+            }
         }
 
         function armSystem(shouldArm, event) {
@@ -2953,6 +2977,7 @@
             document.getElementById('saveIgniterBtn').addEventListener('click', saveIgniterSettings);
             document.getElementById('abortOnDisconnect').addEventListener('change', saveSafetySettings);
             document.getElementById('eStopResetMode').addEventListener('change', saveSafetySettings);
+            document.getElementById('disarmOnReloadOrDrop').addEventListener('change', saveSafetySettings);
             document.getElementById('hideHelpButtons').addEventListener('change', saveUiPreferences);
             document.getElementById('calibrateBtn').addEventListener('click', saveContinuityThresholds);
             document.getElementById('batteryProfile').addEventListener('change', () => {

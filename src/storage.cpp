@@ -54,6 +54,7 @@ void StorageManager::begin() {
     if (!prefs.isKey(NVS_KEYS::SETTING_IGNITER_DURATION)) prefs.putUShort(NVS_KEYS::SETTING_IGNITER_DURATION, DEFAULT_IGNITER_DURATION_MS);
     if (!prefs.isKey(NVS_KEYS::SETTING_AUTO_DELAY)) prefs.putUChar(NVS_KEYS::SETTING_AUTO_DELAY, DEFAULT_AUTO_DELAY_SEC);
     if (!prefs.isKey(NVS_KEYS::SETTING_ABORT_ON_DISCONNECT)) prefs.putBool(NVS_KEYS::SETTING_ABORT_ON_DISCONNECT, DEFAULT_ABORT_ON_DISCONNECT);
+    if (!prefs.isKey(NVS_KEYS::SETTING_DISARM_ON_RELOAD_OR_DROP)) prefs.putBool(NVS_KEYS::SETTING_DISARM_ON_RELOAD_OR_DROP, DEFAULT_DISARM_ON_RELOAD_OR_DROP);
     if (!prefs.isKey(NVS_KEYS::SETTING_HIDE_HELP_BUTTONS)) prefs.putBool(NVS_KEYS::SETTING_HIDE_HELP_BUTTONS, DEFAULT_HIDE_HELP_BUTTONS);
     if (!prefs.isKey(NVS_KEYS::SETTING_ESTOP_RESET_MODE)) prefs.putUChar(NVS_KEYS::SETTING_ESTOP_RESET_MODE, DEFAULT_ESTOP_RESET_MODE);
     if (!prefs.isKey(NVS_KEYS::SETTING_BOARD_COUNT)) prefs.putUChar(NVS_KEYS::SETTING_BOARD_COUNT, DEFAULT_BOARD_COUNT);
@@ -359,6 +360,14 @@ bool StorageManager::getAbortOnDisconnect() {
     return flag;
 }
 
+bool StorageManager::getDisarmOnReloadOrDrop() {
+    Preferences prefs;
+    prefs.begin(NVS_KEYS::NS_SETTINGS, true);
+    bool flag = prefs.getBool(NVS_KEYS::SETTING_DISARM_ON_RELOAD_OR_DROP, DEFAULT_DISARM_ON_RELOAD_OR_DROP);
+    prefs.end();
+    return flag;
+}
+
 bool StorageManager::getHideHelpButtons() {
     Preferences prefs;
     prefs.begin(NVS_KEYS::NS_SETTINGS, true);
@@ -514,6 +523,13 @@ void StorageManager::setAbortOnDisconnect(bool flag) {
     Preferences prefs;
     prefs.begin(NVS_KEYS::NS_SETTINGS, false);
     prefs.putBool(NVS_KEYS::SETTING_ABORT_ON_DISCONNECT, flag);
+    prefs.end();
+}
+
+void StorageManager::setDisarmOnReloadOrDrop(bool flag) {
+    Preferences prefs;
+    prefs.begin(NVS_KEYS::NS_SETTINGS, false);
+    prefs.putBool(NVS_KEYS::SETTING_DISARM_ON_RELOAD_OR_DROP, flag);
     prefs.end();
 }
 
@@ -756,6 +772,7 @@ String StorageManager::exportSettingsJson() {
     settings["igniterDurationMs"] = getIgniterDuration();
     settings["autoDelay"] = getAutoDelay();
     settings["abortOnDisconnect"] = getAbortOnDisconnect();
+    settings["disarmOnReloadOrDrop"] = getDisarmOnReloadOrDrop();
     settings["hideHelpButtons"] = getHideHelpButtons();
     settings["eStopResetMode"] = static_cast<uint8_t>(getEStopResetMode());
     settings["continuityLoGood"] = getContinuityLoGood();
@@ -812,6 +829,10 @@ bool StorageManager::importSettingsJson(const String& jsonStr) {
         }
         if (settings.containsKey("abortOnDisconnect")) {
             setAbortOnDisconnect(settings["abortOnDisconnect"].as<bool>());
+            appliedAnySetting = true;
+        }
+        if (settings.containsKey("disarmOnReloadOrDrop")) {
+            setDisarmOnReloadOrDrop(settings["disarmOnReloadOrDrop"].as<bool>());
             appliedAnySetting = true;
         }
         if (settings.containsKey("hideHelpButtons")) {

@@ -272,7 +272,9 @@ void WebSocketHandler::onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* c
                 Serial.println("[WebSocketHandler] Controller disconnected while auto show running; aborting by policy");
                 wsHandler.triggerEmergencyStop("Controller disconnected");
             } else if (!showRunner.isShowRunning()) {
-                relayManager.setMasterArm(false);
+                if (storage.getDisarmOnReloadOrDrop()) {
+                    relayManager.setMasterArm(false);
+                }
                 relayManager.setAllRelaysOff();
             }
 
@@ -454,6 +456,7 @@ void WebSocketHandler::broadcastFullState(uint32_t targetClientId) {
     settings["igniterDurationSec"] = storage.getIgniterDuration() / 1000.0f;
     settings["autoDelay"] = storage.getAutoDelay();
     settings["abortOnDisconnect"] = storage.getAbortOnDisconnect();
+    settings["disarmOnReloadOrDrop"] = storage.getDisarmOnReloadOrDrop();
     settings["hideHelpButtons"] = storage.getHideHelpButtons();
     settings["eStopResetMode"] = static_cast<uint8_t>(storage.getEStopResetMode());
     settings["continuityLoGood"] = storage.getContinuityLoGood();
@@ -732,7 +735,9 @@ void WebSocketHandler::handleHeartbeatTimeout() {
             triggerEmergencyStop("Controller heartbeat timeout");
         }
     } else {
-        relayManager.setMasterArm(false);
+        if (storage.getDisarmOnReloadOrDrop()) {
+            relayManager.setMasterArm(false);
+        }
         relayManager.setAllRelaysOff();
         broadcastSystemStatus();
         markStateDirty();
@@ -1059,6 +1064,8 @@ void WebSocketHandler::handleSettingCommand(uint32_t clientId, const char* data)
         storage.setAutoDelay(static_cast<uint8_t>(delaySec));
     } else if (strcmp(key, NVS_KEYS::SETTING_ABORT_ON_DISCONNECT) == 0) {
         storage.setAbortOnDisconnect(valueAsBool());
+    } else if (strcmp(key, NVS_KEYS::SETTING_DISARM_ON_RELOAD_OR_DROP) == 0) {
+        storage.setDisarmOnReloadOrDrop(valueAsBool());
     } else if (strcmp(key, NVS_KEYS::SETTING_HIDE_HELP_BUTTONS) == 0) {
         storage.setHideHelpButtons(valueAsBool());
     } else if (strcmp(key, NVS_KEYS::SETTING_ESTOP_RESET_MODE) == 0) {
