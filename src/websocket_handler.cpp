@@ -309,8 +309,6 @@ void WebSocketHandler::onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* c
                 wsHandler.handleAuxNameCommand(clientId, payload.c_str());
             } else if (strcmp(msgType, "set_ap_credentials") == 0) {
                 wsHandler.handleApConfigCommand(clientId, payload.c_str());
-            } else if (strcmp(msgType, "wifi_scan") == 0) {
-                wsHandler.handleWiFiScanCommand(clientId);
             } else if (strcmp(msgType, "wifi_connect") == 0) {
                 wsHandler.handleWiFiConnectCommand(clientId, payload.c_str());
             } else if (strcmp(msgType, "wifi_forget") == 0) {
@@ -1060,26 +1058,6 @@ void WebSocketHandler::handleForgetWiFiCommand(uint32_t clientId) {
     wifiManager.forgetNetwork();
     broadcastWiFiStatus();
     markStateDirty();
-}
-
-void WebSocketHandler::handleWiFiScanCommand(uint32_t clientId) {
-    (void)clientId;
-    int count = WiFi.scanNetworks(false, true);
-
-    DynamicJsonDocument doc(4096);
-    doc["type"] = "wifi_scan_results";
-    JsonArray networks = doc.createNestedArray("networks");
-
-    for (int i = 0; i < count; i++) {
-        JsonObject entry = networks.createNestedObject();
-        entry["ssid"] = WiFi.SSID(i);
-        entry["rssi"] = WiFi.RSSI(i);
-        entry["secure"] = (WiFi.encryptionType(i) != WIFI_AUTH_OPEN);
-    }
-
-    String json;
-    serializeJson(doc, json);
-    ws.textAll(json);
 }
 
 void WebSocketHandler::handleWiFiConnectCommand(uint32_t clientId, const char* data) {

@@ -59,7 +59,6 @@ private:
     bool validateChecksum(const char* command, uint8_t zone, uint32_t timestamp, const char* checksum);
     
     // Message handlers
-    void handleWiFiScanCommand(uint32_t clientId);
     void handleFireCommand(uint32_t clientId, const char* data);
     void handleFireGroupCommand(uint32_t clientId, const char* data);
     void handleArmCommand(uint32_t clientId, const char* data);

@@ -1349,29 +1349,6 @@ input:checked + .slider::before {
   grid-column: 1 / -1;
 }
 
-.wifi-scan-results {
-  margin-top: 0.75rem;
-  display: grid;
-  gap: 0.5rem;
-}
-
-.wifi-network-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.75rem;
-  width: 100%;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  background-color: rgba(21, 25, 35, 0.95);
-  color: var(--text-main);
-  cursor: pointer;
-}
-
-.wifi-network-row:hover {
-  border-color: var(--accent-secondary);
-}
-
 .aux-controls {
   margin-top: 0.5rem;
 }

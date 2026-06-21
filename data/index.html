@@ -239,12 +239,10 @@
                                 autocomplete="new-password">
                         </div>
                         <div class="wifi-action-row">
-                            <button id="scanWifiBtn" class="btn btn-secondary">Scan Networks</button>
                             <button id="connectWifiBtn" class="btn btn-secondary">Connect</button>
                             <button id="forgetWifiBtn" class="btn btn-danger" style="display: none;">Forget
                                 Network</button>
                         </div>
-                        <div id="wifiScanResults" class="wifi-scan-results" style="display: none;"></div>
                         <div id="wifiConnectStatus" class="wifi-connect-status" style="display: none;">
                             <span id="wifiConnectStatusText">Connecting...</span>
                         </div>
@@ -415,8 +413,7 @@
             settings: { ...DEFAULT_SETTINGS },
             auxNames: [...DEFAULT_AUX_NAMES],
             zones: Array.from({ length: MAX_ZONES }, (_, index) => defaultZone(index)),
-            relayTestRunning: false,
-            wifiScanResults: []
+            relayTestRunning: false
         };
 
         const readyStateByZone = new Map();
@@ -606,9 +603,6 @@
                 case 'wifi':
                     updateWiFi(msg);
                     break;
-                case 'wifi_scan_results':
-                    updateWifiScanResults(msg);
-                    break;
                 case 'role':
                     updateRole(msg);
                     break;
@@ -739,12 +733,6 @@
             document.getElementById('wifiIcon').src = iconSrc;
             document.getElementById('showWiFiIcon').src = iconSrc;
             renderStatusOverview();
-        }
-
-        function updateWifiScanResults(msg) {
-            appState.wifiScanResults = Array.isArray(msg.networks) ? msg.networks : [];
-            renderWifiScanResults();
-            showToast(`Found ${appState.wifiScanResults.length} network(s)`, 'info');
         }
 
         function updateRole(msg) {
@@ -1084,8 +1072,6 @@
                 document.getElementById('aux1Name').value = appState.auxNames[0] || DEFAULT_AUX_NAMES[0];
                 document.getElementById('aux2Name').value = appState.auxNames[1] || DEFAULT_AUX_NAMES[1];
             }
-
-            renderWifiScanResults();
         }
 
         function readyPercent(zoneId, nowMs) {
@@ -1342,23 +1328,6 @@
                 });
 
             showZoneGrid.innerHTML = groupCards.concat(singleCards).join('');
-        }
-
-        function renderWifiScanResults() {
-            const container = document.getElementById('wifiScanResults');
-            if (!appState.wifiScanResults.length) {
-                container.style.display = 'none';
-                container.innerHTML = '';
-                return;
-            }
-
-            container.style.display = 'block';
-            container.innerHTML = appState.wifiScanResults.map((network) => `
-                <button type="button" class="wifi-network-row" data-ssid="${escapeHtml(network.ssid || '')}">
-                    <span>${escapeHtml(network.ssid || '(hidden)')}</span>
-                    <span>${Number(network.rssi ?? 0)} dBm ${network.secure ? '🔒' : '🔓'}</span>
-                </button>
-            `).join('');
         }
 
         function syncShowMode() {
@@ -1768,16 +1737,6 @@
             reader.readAsText(file);
         }
 
-        function scanNetworks() {
-            if (!requireControllerAction('scan WiFi networks')) {
-                return;
-            }
-
-            appState.wifiScanResults = [];
-            renderWifiScanResults();
-            wsSend({ type: 'wifi_scan' });
-        }
-
         function toggleRoleLock() {
             if (!requireControllerAction('change role lock')) {
                 return;
@@ -1918,7 +1877,6 @@
             document.getElementById('roleBadge').addEventListener('click', toggleRoleLock);
 
             document.getElementById('saveApBtn').addEventListener('click', saveApCredentials);
-            document.getElementById('scanWifiBtn').addEventListener('click', scanNetworks);
             document.getElementById('connectWifiBtn').addEventListener('click', connectToExternalNetwork);
             document.getElementById('forgetWifiBtn').addEventListener('click', forgetNetwork);
 
@@ -1942,15 +1900,6 @@
 
             document.querySelectorAll('input[name="showMode"]').forEach((radio) => {
                 radio.addEventListener('change', syncShowMode);
-            });
-
-            document.getElementById('wifiScanResults').addEventListener('click', (event) => {
-                const row = event.target.closest('[data-ssid]');
-                if (!row) {
-                    return;
-                }
-                const ssid = row.dataset.ssid || '';
-                document.getElementById('extSsid').value = ssid;
             });
 
             document.getElementById('zonesList').addEventListener('click', (event) => {
