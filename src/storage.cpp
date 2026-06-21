@@ -4,6 +4,30 @@
 // Path for zone persistence; lives in the LittleFS filesystem alongside the UI assets.
 static const char* const ZONES_FILE_PATH = "/zones.json";
 
+namespace {
+const char* const BATTERY_POINT_V_KEYS[BATTERY_MAX_CURVE_POINTS] = {
+    NVS_KEYS::SETTING_BATTERY_POINT0_V,
+    NVS_KEYS::SETTING_BATTERY_POINT1_V,
+    NVS_KEYS::SETTING_BATTERY_POINT2_V,
+    NVS_KEYS::SETTING_BATTERY_POINT3_V,
+    NVS_KEYS::SETTING_BATTERY_POINT4_V,
+    NVS_KEYS::SETTING_BATTERY_POINT5_V,
+    NVS_KEYS::SETTING_BATTERY_POINT6_V,
+    NVS_KEYS::SETTING_BATTERY_POINT7_V,
+};
+
+const char* const BATTERY_POINT_S_KEYS[BATTERY_MAX_CURVE_POINTS] = {
+    NVS_KEYS::SETTING_BATTERY_POINT0_S,
+    NVS_KEYS::SETTING_BATTERY_POINT1_S,
+    NVS_KEYS::SETTING_BATTERY_POINT2_S,
+    NVS_KEYS::SETTING_BATTERY_POINT3_S,
+    NVS_KEYS::SETTING_BATTERY_POINT4_S,
+    NVS_KEYS::SETTING_BATTERY_POINT5_S,
+    NVS_KEYS::SETTING_BATTERY_POINT6_S,
+    NVS_KEYS::SETTING_BATTERY_POINT7_S,
+};
+}
+
 StorageManager storage;
 
 StorageManager::StorageManager() : zoneCacheLoaded(false) {
@@ -12,7 +36,7 @@ StorageManager::StorageManager() : zoneCacheLoaded(false) {
 
 void StorageManager::begin() {
     Preferences prefs;
-    const uint16_t schemaVersion = 2;
+    const uint16_t schemaVersion = 3;
 
     // Seed defaults once so read paths don't repeatedly hit missing-key lookups.
     prefs.begin(NVS_KEYS::NS_WIFI, false);
@@ -33,6 +57,18 @@ void StorageManager::begin() {
     if (!prefs.isKey(NVS_KEYS::SETTING_CONTINUITY_LO_GOOD)) prefs.putFloat(NVS_KEYS::SETTING_CONTINUITY_LO_GOOD, DEFAULT_CONTINUITY_LOW_GOOD);
     if (!prefs.isKey(NVS_KEYS::SETTING_CONTINUITY_HI_GOOD)) prefs.putFloat(NVS_KEYS::SETTING_CONTINUITY_HI_GOOD, DEFAULT_CONTINUITY_HI_GOOD);
     if (!prefs.isKey(NVS_KEYS::SETTING_CONTINUITY_LO_OPEN)) prefs.putFloat(NVS_KEYS::SETTING_CONTINUITY_LO_OPEN, DEFAULT_CONTINUITY_LOW_OPEN_CIRCUIT);
+    if (!prefs.isKey(NVS_KEYS::SETTING_BATTERY_PROFILE)) prefs.putUChar(NVS_KEYS::SETTING_BATTERY_PROFILE, DEFAULT_BATTERY_PROFILE);
+    if (!prefs.isKey(NVS_KEYS::SETTING_BATTERY_CELL_COUNT)) prefs.putUChar(NVS_KEYS::SETTING_BATTERY_CELL_COUNT, DEFAULT_BATTERY_CUSTOM_CELL_COUNT);
+    if (!prefs.isKey(NVS_KEYS::SETTING_BATTERY_PACK_MIN)) prefs.putFloat(NVS_KEYS::SETTING_BATTERY_PACK_MIN, DEFAULT_BATTERY_CUSTOM_PACK_MIN);
+    if (!prefs.isKey(NVS_KEYS::SETTING_BATTERY_PACK_MAX)) prefs.putFloat(NVS_KEYS::SETTING_BATTERY_PACK_MAX, DEFAULT_BATTERY_CUSTOM_PACK_MAX);
+    if (!prefs.isKey(NVS_KEYS::SETTING_BATTERY_LOW_WARN)) prefs.putFloat(NVS_KEYS::SETTING_BATTERY_LOW_WARN, DEFAULT_BATTERY_CUSTOM_LOW_WARN);
+    if (!prefs.isKey(NVS_KEYS::SETTING_BATTERY_SAMPLE_INTERVAL)) prefs.putUShort(NVS_KEYS::SETTING_BATTERY_SAMPLE_INTERVAL, DEFAULT_BATTERY_SAMPLE_INTERVAL_MS);
+    if (!prefs.isKey(NVS_KEYS::SETTING_BATTERY_CURVE_POINT_COUNT)) prefs.putUChar(NVS_KEYS::SETTING_BATTERY_CURVE_POINT_COUNT, DEFAULT_BATTERY_CUSTOM_POINT_COUNT);
+    for (uint8_t i = 0; i < BATTERY_MAX_CURVE_POINTS; i++) {
+        const BatteryCurvePoint& point = DEFAULT_BATTERY_CUSTOM_POINTS[i];
+        if (!prefs.isKey(BATTERY_POINT_V_KEYS[i])) prefs.putFloat(BATTERY_POINT_V_KEYS[i], point.voltage);
+        if (!prefs.isKey(BATTERY_POINT_S_KEYS[i])) prefs.putUChar(BATTERY_POINT_S_KEYS[i], point.soc);
+    }
     prefs.putUShort("schema_ver", schemaVersion);
     prefs.end();
 
@@ -359,6 +395,95 @@ float StorageManager::getContinuityLoOpen() {
     return val;
 }
 
+uint8_t StorageManager::getBatteryProfileId() {
+    Preferences prefs;
+    prefs.begin(NVS_KEYS::NS_SETTINGS, true);
+    uint8_t profile = prefs.getUChar(NVS_KEYS::SETTING_BATTERY_PROFILE, DEFAULT_BATTERY_PROFILE);
+    prefs.end();
+    if (profile > static_cast<uint8_t>(BatteryProfile::CUSTOM)) {
+        return DEFAULT_BATTERY_PROFILE;
+    }
+    return profile;
+}
+
+uint8_t StorageManager::getBatteryCellCount() {
+    Preferences prefs;
+    prefs.begin(NVS_KEYS::NS_SETTINGS, true);
+    uint8_t count = prefs.getUChar(NVS_KEYS::SETTING_BATTERY_CELL_COUNT, DEFAULT_BATTERY_CUSTOM_CELL_COUNT);
+    prefs.end();
+    return static_cast<uint8_t>(constrain(static_cast<int>(count), 1, 64));
+}
+
+float StorageManager::getBatteryPackMin() {
+    Preferences prefs;
+    prefs.begin(NVS_KEYS::NS_SETTINGS, true);
+    float voltage = prefs.getFloat(NVS_KEYS::SETTING_BATTERY_PACK_MIN, DEFAULT_BATTERY_CUSTOM_PACK_MIN);
+    prefs.end();
+    return constrain(voltage, 0.1f, 400.0f);
+}
+
+float StorageManager::getBatteryPackMax() {
+    Preferences prefs;
+    prefs.begin(NVS_KEYS::NS_SETTINGS, true);
+    float voltage = prefs.getFloat(NVS_KEYS::SETTING_BATTERY_PACK_MAX, DEFAULT_BATTERY_CUSTOM_PACK_MAX);
+    prefs.end();
+    return constrain(voltage, 0.1f, 420.0f);
+}
+
+float StorageManager::getBatteryLowWarn() {
+    Preferences prefs;
+    prefs.begin(NVS_KEYS::NS_SETTINGS, true);
+    float voltage = prefs.getFloat(NVS_KEYS::SETTING_BATTERY_LOW_WARN, DEFAULT_BATTERY_CUSTOM_LOW_WARN);
+    prefs.end();
+    return constrain(voltage, 0.0f, 420.0f);
+}
+
+uint16_t StorageManager::getBatterySampleIntervalMs() {
+    Preferences prefs;
+    prefs.begin(NVS_KEYS::NS_SETTINGS, true);
+    uint16_t intervalMs = prefs.getUShort(NVS_KEYS::SETTING_BATTERY_SAMPLE_INTERVAL, DEFAULT_BATTERY_SAMPLE_INTERVAL_MS);
+    prefs.end();
+    return static_cast<uint16_t>(constrain(static_cast<int>(intervalMs), 500, 10000));
+}
+
+uint8_t StorageManager::getBatteryCurvePointCount() {
+    Preferences prefs;
+    prefs.begin(NVS_KEYS::NS_SETTINGS, true);
+    uint8_t count = prefs.getUChar(NVS_KEYS::SETTING_BATTERY_CURVE_POINT_COUNT, DEFAULT_BATTERY_CUSTOM_POINT_COUNT);
+    prefs.end();
+    return static_cast<uint8_t>(constrain(static_cast<int>(count), 2, static_cast<int>(BATTERY_MAX_CURVE_POINTS)));
+}
+
+void StorageManager::getBatteryCurve(BatteryCurvePoint* points, uint8_t& count) {
+    count = getBatteryCurvePointCount();
+
+    Preferences prefs;
+    prefs.begin(NVS_KEYS::NS_SETTINGS, true);
+    for (uint8_t i = 0; i < BATTERY_MAX_CURVE_POINTS; i++) {
+        float defaultVoltage = DEFAULT_BATTERY_CUSTOM_POINTS[i].voltage;
+        uint8_t defaultSoc = DEFAULT_BATTERY_CUSTOM_POINTS[i].soc;
+        points[i].voltage = prefs.getFloat(BATTERY_POINT_V_KEYS[i], defaultVoltage);
+        points[i].soc = prefs.getUChar(BATTERY_POINT_S_KEYS[i], defaultSoc);
+    }
+    prefs.end();
+
+    // Normalize and sort used points by voltage to ensure interpolation is stable.
+    for (uint8_t i = 0; i < count; i++) {
+        points[i].voltage = constrain(points[i].voltage, 0.0f, 420.0f);
+        points[i].soc = static_cast<uint8_t>(constrain(static_cast<int>(points[i].soc), 0, 100));
+    }
+
+    for (uint8_t i = 0; i + 1 < count; i++) {
+        for (uint8_t j = i + 1; j < count; j++) {
+            if (points[j].voltage < points[i].voltage) {
+                BatteryCurvePoint tmp = points[i];
+                points[i] = points[j];
+                points[j] = tmp;
+            }
+        }
+    }
+}
+
 void StorageManager::setIgniterDuration(uint16_t ms) {
     Preferences prefs;
     prefs.begin(NVS_KEYS::NS_SETTINGS, false);
@@ -400,6 +525,83 @@ void StorageManager::setContinuityThresholds(float loGood, float hiGood, float l
     prefs.putFloat(NVS_KEYS::SETTING_CONTINUITY_LO_GOOD, loGood);
     prefs.putFloat(NVS_KEYS::SETTING_CONTINUITY_HI_GOOD, hiGood);
     prefs.putFloat(NVS_KEYS::SETTING_CONTINUITY_LO_OPEN, loOpen);
+    prefs.end();
+}
+
+void StorageManager::setBatteryProfileId(uint8_t profileId) {
+    Preferences prefs;
+    prefs.begin(NVS_KEYS::NS_SETTINGS, false);
+    uint8_t value = static_cast<uint8_t>(constrain(static_cast<int>(profileId), 0, static_cast<int>(BatteryProfile::CUSTOM)));
+    prefs.putUChar(NVS_KEYS::SETTING_BATTERY_PROFILE, value);
+    prefs.end();
+}
+
+void StorageManager::setBatteryCellCount(uint8_t count) {
+    Preferences prefs;
+    prefs.begin(NVS_KEYS::NS_SETTINGS, false);
+    prefs.putUChar(NVS_KEYS::SETTING_BATTERY_CELL_COUNT, static_cast<uint8_t>(constrain(static_cast<int>(count), 1, 64)));
+    prefs.end();
+}
+
+void StorageManager::setBatteryPackMin(float voltage) {
+    Preferences prefs;
+    prefs.begin(NVS_KEYS::NS_SETTINGS, false);
+    prefs.putFloat(NVS_KEYS::SETTING_BATTERY_PACK_MIN, constrain(voltage, 0.1f, 400.0f));
+    prefs.end();
+}
+
+void StorageManager::setBatteryPackMax(float voltage) {
+    Preferences prefs;
+    prefs.begin(NVS_KEYS::NS_SETTINGS, false);
+    prefs.putFloat(NVS_KEYS::SETTING_BATTERY_PACK_MAX, constrain(voltage, 0.1f, 420.0f));
+    prefs.end();
+}
+
+void StorageManager::setBatteryLowWarn(float voltage) {
+    Preferences prefs;
+    prefs.begin(NVS_KEYS::NS_SETTINGS, false);
+    prefs.putFloat(NVS_KEYS::SETTING_BATTERY_LOW_WARN, constrain(voltage, 0.0f, 420.0f));
+    prefs.end();
+}
+
+void StorageManager::setBatterySampleIntervalMs(uint16_t intervalMs) {
+    Preferences prefs;
+    prefs.begin(NVS_KEYS::NS_SETTINGS, false);
+    prefs.putUShort(NVS_KEYS::SETTING_BATTERY_SAMPLE_INTERVAL, static_cast<uint16_t>(constrain(static_cast<int>(intervalMs), 500, 10000)));
+    prefs.end();
+}
+
+void StorageManager::setBatteryCurve(const BatteryCurvePoint* points, uint8_t count) {
+    uint8_t normalizedCount = static_cast<uint8_t>(constrain(static_cast<int>(count), 2, static_cast<int>(BATTERY_MAX_CURVE_POINTS)));
+
+    BatteryCurvePoint sorted[BATTERY_MAX_CURVE_POINTS];
+    for (uint8_t i = 0; i < BATTERY_MAX_CURVE_POINTS; i++) {
+        sorted[i] = points[i];
+    }
+
+    for (uint8_t i = 0; i + 1 < normalizedCount; i++) {
+        for (uint8_t j = i + 1; j < normalizedCount; j++) {
+            if (sorted[j].voltage < sorted[i].voltage) {
+                BatteryCurvePoint tmp = sorted[i];
+                sorted[i] = sorted[j];
+                sorted[j] = tmp;
+            }
+        }
+    }
+
+    Preferences prefs;
+    prefs.begin(NVS_KEYS::NS_SETTINGS, false);
+    prefs.putUChar(NVS_KEYS::SETTING_BATTERY_CURVE_POINT_COUNT, normalizedCount);
+    for (uint8_t i = 0; i < BATTERY_MAX_CURVE_POINTS; i++) {
+        float voltage = (i < normalizedCount)
+            ? constrain(sorted[i].voltage, 0.0f, 420.0f)
+            : DEFAULT_BATTERY_CUSTOM_POINTS[i].voltage;
+        uint8_t soc = (i < normalizedCount)
+            ? static_cast<uint8_t>(constrain(static_cast<int>(sorted[i].soc), 0, 100))
+            : DEFAULT_BATTERY_CUSTOM_POINTS[i].soc;
+        prefs.putFloat(BATTERY_POINT_V_KEYS[i], voltage);
+        prefs.putUChar(BATTERY_POINT_S_KEYS[i], soc);
+    }
     prefs.end();
 }
 
@@ -516,7 +718,7 @@ bool StorageManager::importShowJson(const String& jsonStr) {
 }
 
 String StorageManager::exportSettingsJson() {
-    DynamicJsonDocument doc(2048);
+    DynamicJsonDocument doc(4096);
 
     JsonObject settings = doc.createNestedObject("settings");
     settings["igniterDurationMs"] = getIgniterDuration();
@@ -526,6 +728,22 @@ String StorageManager::exportSettingsJson() {
     settings["continuityLoGood"] = getContinuityLoGood();
     settings["continuityHiGood"] = getContinuityHiGood();
     settings["continuityLoOpen"] = getContinuityLoOpen();
+    settings["batteryProfileId"] = getBatteryProfileId();
+    settings["batteryCellCount"] = getBatteryCellCount();
+    settings["batteryPackMin"] = getBatteryPackMin();
+    settings["batteryPackMax"] = getBatteryPackMax();
+    settings["batteryLowWarn"] = getBatteryLowWarn();
+    settings["batterySampleIntervalMs"] = getBatterySampleIntervalMs();
+
+    BatteryCurvePoint points[BATTERY_MAX_CURVE_POINTS];
+    uint8_t pointCount = 0;
+    getBatteryCurve(points, pointCount);
+    JsonArray curve = settings.createNestedArray("batteryCurve");
+    for (uint8_t i = 0; i < pointCount; i++) {
+        JsonObject point = curve.createNestedObject();
+        point["voltage"] = points[i].voltage;
+        point["soc"] = points[i].soc;
+    }
 
     JsonArray auxNames = doc.createNestedArray("auxNames");
     auxNames.add(getAuxRelayName(0));
@@ -537,7 +755,7 @@ String StorageManager::exportSettingsJson() {
 }
 
 bool StorageManager::importSettingsJson(const String& jsonStr) {
-    DynamicJsonDocument doc(4096);
+    DynamicJsonDocument doc(8192);
     DeserializationError error = deserializeJson(doc, jsonStr);
     if (error) {
         Serial.printf("[Storage] Settings import parse error: %s\n", error.c_str());
@@ -589,6 +807,59 @@ bool StorageManager::importSettingsJson(const String& jsonStr) {
         if (continuityUpdated) {
             setContinuityThresholds(loGood, hiGood, loOpen);
             appliedAnySetting = true;
+        }
+
+        if (settings.containsKey("batteryProfileId")) {
+            int profileId = constrain(settings["batteryProfileId"].as<int>(), 0, static_cast<int>(BatteryProfile::CUSTOM));
+            setBatteryProfileId(static_cast<uint8_t>(profileId));
+            appliedAnySetting = true;
+        }
+        if (settings.containsKey("batteryCellCount")) {
+            int cellCount = constrain(settings["batteryCellCount"].as<int>(), 1, 64);
+            setBatteryCellCount(static_cast<uint8_t>(cellCount));
+            appliedAnySetting = true;
+        }
+        if (settings.containsKey("batteryPackMin")) {
+            setBatteryPackMin(settings["batteryPackMin"].as<float>());
+            appliedAnySetting = true;
+        }
+        if (settings.containsKey("batteryPackMax")) {
+            setBatteryPackMax(settings["batteryPackMax"].as<float>());
+            appliedAnySetting = true;
+        }
+        if (settings.containsKey("batteryLowWarn")) {
+            setBatteryLowWarn(settings["batteryLowWarn"].as<float>());
+            appliedAnySetting = true;
+        }
+        if (settings.containsKey("batterySampleIntervalMs")) {
+            int sampleMs = constrain(settings["batterySampleIntervalMs"].as<int>(), 500, 10000);
+            setBatterySampleIntervalMs(static_cast<uint16_t>(sampleMs));
+            appliedAnySetting = true;
+        }
+
+        if (settings.containsKey("batteryCurve") && settings["batteryCurve"].is<JsonArray>()) {
+            JsonArray curve = settings["batteryCurve"].as<JsonArray>();
+            BatteryCurvePoint points[BATTERY_MAX_CURVE_POINTS];
+            uint8_t pointCount = 0;
+            for (JsonObject point : curve) {
+                if (pointCount >= BATTERY_MAX_CURVE_POINTS) {
+                    break;
+                }
+                if (!point.containsKey("voltage") || !point.containsKey("soc")) {
+                    continue;
+                }
+                points[pointCount].voltage = point["voltage"].as<float>();
+                points[pointCount].soc = static_cast<uint8_t>(constrain(point["soc"].as<int>(), 0, 100));
+                pointCount++;
+            }
+
+            if (pointCount >= 2) {
+                for (uint8_t i = pointCount; i < BATTERY_MAX_CURVE_POINTS; i++) {
+                    points[i] = DEFAULT_BATTERY_CUSTOM_POINTS[i];
+                }
+                setBatteryCurve(points, pointCount);
+                appliedAnySetting = true;
+            }
         }
     }
 

@@ -65,6 +65,14 @@ public:
     float getContinuityLoGood();
     float getContinuityHiGood();
     float getContinuityLoOpen();
+    uint8_t getBatteryProfileId();
+    uint8_t getBatteryCellCount();
+    float getBatteryPackMin();
+    float getBatteryPackMax();
+    float getBatteryLowWarn();
+    uint16_t getBatterySampleIntervalMs();
+    uint8_t getBatteryCurvePointCount();
+    void getBatteryCurve(BatteryCurvePoint* points, uint8_t& count);
     
     void setIgniterDuration(uint16_t ms);
     void setAutoDelay(uint8_t sec);
@@ -72,6 +80,13 @@ public:
     void setEStopResetMode(EStopResetMode mode);
     void setBoardCount(uint8_t count);
     void setContinuityThresholds(float loGood, float hiGood, float loOpen);
+    void setBatteryProfileId(uint8_t profileId);
+    void setBatteryCellCount(uint8_t count);
+    void setBatteryPackMin(float voltage);
+    void setBatteryPackMax(float voltage);
+    void setBatteryLowWarn(float voltage);
+    void setBatterySampleIntervalMs(uint16_t intervalMs);
+    void setBatteryCurve(const BatteryCurvePoint* points, uint8_t count);
     
     // Getters - Aux
     String getAuxRelayName(uint8_t relayIdx);  // relayIdx = 0 or 1

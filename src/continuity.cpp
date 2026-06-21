@@ -17,11 +17,24 @@ ContinuityManager::ContinuityManager()
     : adsAvailable(false), lastAdsRecoveryAttemptMs(0), lastScanMs(0), lastBatteryScanMs(0), currentMuxPosition(0),
       threshLoGood(DEFAULT_CONTINUITY_LOW_GOOD),
       threshHiGood(DEFAULT_CONTINUITY_HI_GOOD),
-      threshLoOpen(DEFAULT_CONTINUITY_LOW_OPEN_CIRCUIT) {
+    threshLoOpen(DEFAULT_CONTINUITY_LOW_OPEN_CIRCUIT),
+    batteryVoltageRaw(0.0f), batteryVoltageFiltered(0.0f), batteryPercent(0),
+    lastBatteryConfigRefreshMs(0), lastBatteryPercentCalcMs(0) {
     
     // Initialize all zones to unknown
     for (uint8_t i = 0; i < MAX_ZONES; i++) {
         zoneStatus[i] = ContinuityStatus::UNKNOWN;
+    }
+
+    batteryProfile.profile = BatteryProfile::LIFEPO4;
+    batteryProfile.cellCount = DEFAULT_BATTERY_CUSTOM_CELL_COUNT;
+    batteryProfile.packMin = DEFAULT_BATTERY_CUSTOM_PACK_MIN;
+    batteryProfile.packMax = DEFAULT_BATTERY_CUSTOM_PACK_MAX;
+    batteryProfile.lowWarn = DEFAULT_BATTERY_CUSTOM_LOW_WARN;
+    batteryProfile.sampleIntervalMs = DEFAULT_BATTERY_SAMPLE_INTERVAL_MS;
+    batteryProfile.pointCount = DEFAULT_BATTERY_CUSTOM_POINT_COUNT;
+    for (uint8_t i = 0; i < BATTERY_MAX_CURVE_POINTS; i++) {
+        batteryProfile.points[i] = DEFAULT_BATTERY_CUSTOM_POINTS[i];
     }
     
 }
@@ -31,6 +44,7 @@ void ContinuityManager::begin() {
     threshLoGood = storage.getContinuityLoGood();
     threshHiGood = storage.getContinuityHiGood();
     threshLoOpen = storage.getContinuityLoOpen();
+    refreshBatteryProfile(true);
 
     lastAdsRecoveryAttemptMs = millis();
     if (!initializeAds(false)) {
@@ -57,6 +71,7 @@ void ContinuityManager::update() {
     }
 
     uint32_t now = millis();
+    refreshBatteryProfile();
     
     // Scan zones periodically
     if (now - lastScanMs >= CONTINUITY_SCAN_INTERVAL_MS) {
@@ -64,11 +79,62 @@ void ContinuityManager::update() {
         lastScanMs = now;
     }
     
-    // Read battery periodically
-    if (now - lastBatteryScanMs >= 5000) {  // Every 5 seconds
+    // Read battery using configured sample interval.
+    if (now - lastBatteryScanMs >= batteryProfile.sampleIntervalMs) {
         readBatteryVoltage();
         lastBatteryScanMs = now;
     }
+}
+
+void ContinuityManager::applyPresetProfile(BatteryProfile profileId, uint8_t overrideCellCount) {
+    const BatteryProfilePreset* preset = getBatteryProfilePreset(profileId);
+    batteryProfile.profile = profileId;
+    batteryProfile.cellCount = overrideCellCount > 0 ? overrideCellCount : preset->defaultCellCount;
+    batteryProfile.sampleIntervalMs = storage.getBatterySampleIntervalMs();
+    batteryProfile.pointCount = preset->pointCount;
+
+    for (uint8_t i = 0; i < preset->pointCount; i++) {
+        batteryProfile.points[i].voltage = preset->points[i].voltage * batteryProfile.cellCount;
+        batteryProfile.points[i].soc = preset->points[i].soc;
+    }
+
+    batteryProfile.packMin = preset->points[0].voltage * batteryProfile.cellCount;
+    batteryProfile.packMax = preset->points[preset->pointCount - 1].voltage * batteryProfile.cellCount;
+    batteryProfile.lowWarn = preset->lowWarnCell * batteryProfile.cellCount;
+}
+
+void ContinuityManager::refreshBatteryProfile(bool force) {
+    uint32_t now = millis();
+    if (!force && (now - lastBatteryConfigRefreshMs) < 1000) {
+        return;
+    }
+    lastBatteryConfigRefreshMs = now;
+
+    BatteryProfile profileId = static_cast<BatteryProfile>(storage.getBatteryProfileId());
+    if (profileId != BatteryProfile::CUSTOM) {
+        applyPresetProfile(profileId, 0);
+        return;
+    }
+
+    batteryProfile.profile = BatteryProfile::CUSTOM;
+    batteryProfile.cellCount = storage.getBatteryCellCount();
+    batteryProfile.packMin = storage.getBatteryPackMin();
+    batteryProfile.packMax = storage.getBatteryPackMax();
+    batteryProfile.lowWarn = storage.getBatteryLowWarn();
+    batteryProfile.sampleIntervalMs = storage.getBatterySampleIntervalMs();
+
+    storage.getBatteryCurve(batteryProfile.points, batteryProfile.pointCount);
+    if (batteryProfile.pointCount < 2) {
+        batteryProfile.pointCount = DEFAULT_BATTERY_CUSTOM_POINT_COUNT;
+        for (uint8_t i = 0; i < BATTERY_MAX_CURVE_POINTS; i++) {
+            batteryProfile.points[i] = DEFAULT_BATTERY_CUSTOM_POINTS[i];
+        }
+    }
+
+    if (batteryProfile.packMax <= batteryProfile.packMin) {
+        batteryProfile.packMax = batteryProfile.packMin + 1.0f;
+    }
+    batteryProfile.lowWarn = constrain(batteryProfile.lowWarn, batteryProfile.packMin, batteryProfile.packMax);
 }
 
 bool ContinuityManager::initializeAds(bool isRecoveryAttempt) {
@@ -196,9 +262,17 @@ ContinuityStatus ContinuityManager::getZoneStatus(uint8_t zoneIdx) {
 void ContinuityManager::readBatteryVoltage() {
     // Read from ADS1115 channel 3 (battery voltage divider)
     float adcVolt = readAdcChannel(ADS1115_CHANNEL_BATTERY);
-    float batVolt = adcVolt * VBAT_SCALE;
-    
-    // This is called by UI handlers; see getBatteryVoltage() and getBatteryPercent()
+    batteryVoltageRaw = adcVolt * VBAT_SCALE;
+
+    if (batteryVoltageFiltered <= 0.0f) {
+        batteryVoltageFiltered = batteryVoltageRaw;
+    } else {
+        const float alpha = 0.35f;
+        batteryVoltageFiltered = (alpha * batteryVoltageRaw) + ((1.0f - alpha) * batteryVoltageFiltered);
+    }
+
+    batteryPercent = calculateBatteryPercent(batteryVoltageFiltered);
+    lastBatteryPercentCalcMs = millis();
 }
 
 float ContinuityManager::getBatteryVoltage() {
@@ -206,27 +280,62 @@ float ContinuityManager::getBatteryVoltage() {
         return 0.0f;
     }
 
-    float adcVolt = readAdcChannel(ADS1115_CHANNEL_BATTERY);
-    return adcVolt * VBAT_SCALE;
+    if (batteryVoltageFiltered <= 0.0f) {
+        readBatteryVoltage();
+    }
+
+    return batteryVoltageFiltered;
 }
 
 int ContinuityManager::getBatteryPercent() {
-    float batVolt = getBatteryVoltage();
-    
-    // LiFePO4 16S (51.2V nominal, ~40V min, ~58.4V max)
-    // Map to 0-100% in 5% increments
-    if (batVolt >= VBAT_MAX_PACK) return 100;
-    if (batVolt <= VBAT_MIN_PACK) return 0;
-    
-    // Linear interpolation
-    float percent = ((batVolt - VBAT_MIN_PACK) / (VBAT_MAX_PACK - VBAT_MIN_PACK)) * 100.0f;
-    
-    // Round to nearest 5%
-    int percentInt = (int)((percent + 2.5f) / 5.0f) * 5;
-    if (percentInt > 100) percentInt = 100;
-    if (percentInt < 0) percentInt = 0;
-    
-    return percentInt;
+    if (!adsAvailable) {
+        return 0;
+    }
+
+    refreshBatteryProfile();
+    uint32_t now = millis();
+    if (batteryVoltageFiltered <= 0.0f || now - lastBatteryPercentCalcMs > (batteryProfile.sampleIntervalMs + 1000)) {
+        readBatteryVoltage();
+    }
+
+    return batteryPercent;
+}
+
+int ContinuityManager::calculateBatteryPercent(float packVoltage) const {
+    if (batteryProfile.pointCount < 2) {
+        if (packVoltage <= batteryProfile.packMin) return 0;
+        if (packVoltage >= batteryProfile.packMax) return 100;
+        float ratio = (packVoltage - batteryProfile.packMin) / (batteryProfile.packMax - batteryProfile.packMin);
+        return static_cast<int>(constrain(static_cast<int>(ratio * 100.0f), 0, 100));
+    }
+
+    if (packVoltage <= batteryProfile.points[0].voltage) {
+        return batteryProfile.points[0].soc;
+    }
+
+    if (packVoltage >= batteryProfile.points[batteryProfile.pointCount - 1].voltage) {
+        return batteryProfile.points[batteryProfile.pointCount - 1].soc;
+    }
+
+    for (uint8_t i = 0; i + 1 < batteryProfile.pointCount; i++) {
+        const BatteryCurvePoint& left = batteryProfile.points[i];
+        const BatteryCurvePoint& right = batteryProfile.points[i + 1];
+        if (packVoltage < left.voltage || packVoltage > right.voltage) {
+            continue;
+        }
+
+        float span = right.voltage - left.voltage;
+        if (span <= 0.0001f) {
+            return right.soc;
+        }
+
+        float t = (packVoltage - left.voltage) / span;
+        float interpolated = left.soc + ((right.soc - left.soc) * t);
+        int rounded = static_cast<int>(interpolated + 0.5f);
+        return constrain(rounded, 0, 100);
+    }
+
+    return 0;
 }
 
 float ContinuityManager::getLowGoodThreshold() {

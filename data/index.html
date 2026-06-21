@@ -331,6 +331,81 @@
                 </div>
 
                 <div class="settings-section card">
+                    <h3>Battery Charge State Monitoring</h3>
+                    <p class="muted">Configure chemistry-specific voltage-to-charge mapping for battery percent display.
+                    </p>
+                    <div class="setting-group">
+                        <label>Battery Chemistry Profile:</label>
+                        <select id="batteryProfile">
+                            <option value="0">LiFePO4 Lithium</option>
+                            <option value="1">Lithium-ion (NMC/NCA)</option>
+                            <option value="2">Lithium Polymer (LiPo)</option>
+                            <option value="3">Lead-Acid Flooded</option>
+                            <option value="4">AGM</option>
+                            <option value="5">Gel Lead-Acid</option>
+                            <option value="6">LTO (Lithium Titanate)</option>
+                            <option value="7">NiMH</option>
+                            <option value="8">Custom</option>
+                        </select>
+                    </div>
+
+                    <div id="batteryResolvedPanel" class="battery-readonly-panel">
+                        <p class="battery-readonly-title">Resolved Profile Details (Read-only)</p>
+                        <p id="batteryProfileSummary" class="muted">--</p>
+                        <div class="battery-readonly-grid">
+                            <div><span class="muted">Cell Min/Nom/Max:</span> <span id="batteryCellRange">--</span>
+                            </div>
+                            <div><span class="muted">Cell Count:</span> <span id="batteryResolvedCellCount">--</span>
+                            </div>
+                            <div><span class="muted">Pack Min/Max:</span> <span id="batteryPackRange">--</span></div>
+                            <div><span class="muted">Low Warn Threshold:</span> <span
+                                    id="batteryResolvedLowWarn">--</span></div>
+                            <div><span class="muted">Sample Interval:</span> <span
+                                    id="batteryResolvedSampleMs">--</span></div>
+                        </div>
+                        <div class="setting-group">
+                            <label>Example Voltage-to-SoC Points:</label>
+                            <textarea id="batteryResolvedCurve" readonly rows="5"></textarea>
+                        </div>
+                    </div>
+
+                    <div id="batteryCustomPanel" class="battery-custom-panel" style="display: none;">
+                        <div class="setting-group">
+                            <label>Cell Count (series):</label>
+                            <input type="number" id="batteryCellCount" min="1" max="64" step="1" value="16">
+                        </div>
+                        <div class="setting-group">
+                            <label>Pack Min Voltage (0%):</label>
+                            <input type="number" id="batteryPackMin" min="0.1" max="400" step="0.1" value="40">
+                        </div>
+                        <div class="setting-group">
+                            <label>Pack Max Voltage (100%):</label>
+                            <input type="number" id="batteryPackMax" min="0.1" max="420" step="0.1" value="58.4">
+                        </div>
+                        <div class="setting-group">
+                            <label>Low Battery Warning Threshold (V):</label>
+                            <input type="number" id="batteryLowWarn" min="0" max="420" step="0.1" value="46.0">
+                        </div>
+                        <div class="setting-group">
+                            <label>Smoothing / Sample Interval (ms):</label>
+                            <input type="number" id="batterySampleIntervalMs" min="500" max="10000" step="100"
+                                value="5000">
+                        </div>
+                        <div class="setting-group">
+                            <label>Custom Lookup Points (one per line: voltage,soc):</label>
+                            <textarea id="batteryCurveEditor" rows="6">40,0
+48,20
+51.2,50
+54.4,75
+56.8,90
+58.4,100</textarea>
+                        </div>
+                    </div>
+
+                    <button id="saveBatteryBtn" class="btn btn-secondary">Save Battery Profile</button>
+                </div>
+
+                <div class="settings-section card">
                     <h3>Settings Management</h3>
                     <p class="muted">Export or import user-configurable settings only. WiFi credentials and show data
                         are excluded.</p>
@@ -411,7 +486,35 @@
             eStopResetMode: 0,
             continuityLoGood: 0.0001,
             continuityHiGood: 0.015,
-            continuityLoOpen: 3.0
+            continuityLoOpen: 3.0,
+            batteryProfileId: 0,
+            batteryProfileName: 'LiFePO4 Lithium',
+            batteryCellCount: 16,
+            batteryPackMin: 40.0,
+            batteryPackMax: 58.4,
+            batteryLowWarn: 46.0,
+            batterySampleIntervalMs: 5000,
+            batteryCurve: [
+                { voltage: 40.0, soc: 0 },
+                { voltage: 48.0, soc: 20 },
+                { voltage: 51.2, soc: 50 },
+                { voltage: 54.4, soc: 75 },
+                { voltage: 56.8, soc: 90 },
+                { voltage: 58.4, soc: 100 }
+            ],
+            batteryResolved: {
+                isCustom: false,
+                profileName: 'LiFePO4 Lithium',
+                summary: '',
+                cellCount: 16,
+                cellMin: 2.5,
+                cellNominal: 3.2,
+                cellMax: 3.65,
+                packMin: 40.0,
+                packMax: 58.4,
+                lowWarn: 46.0,
+                samplePoints: []
+            }
         };
 
         const appState = {
@@ -1097,6 +1200,63 @@
             }
         }
 
+        function formatCurvePoints(points) {
+            if (!Array.isArray(points) || points.length === 0) {
+                return '--';
+            }
+            return points
+                .map((point) => `${Number(point.voltage ?? 0).toFixed(2)},${Math.round(Number(point.soc ?? 0))}`)
+                .join('\n');
+        }
+
+        function parseBatteryCurveEditor() {
+            const editor = document.getElementById('batteryCurveEditor');
+            const rows = String(editor.value || '')
+                .split('\n')
+                .map((row) => row.trim())
+                .filter((row) => row.length > 0);
+
+            const points = [];
+            rows.forEach((row) => {
+                const parts = row.split(',').map((item) => item.trim());
+                if (parts.length !== 2) {
+                    return;
+                }
+                const voltage = Number(parts[0]);
+                const soc = Number(parts[1]);
+                if (!Number.isFinite(voltage) || !Number.isFinite(soc)) {
+                    return;
+                }
+                points.push({
+                    voltage,
+                    soc: Math.min(100, Math.max(0, Math.round(soc)))
+                });
+            });
+
+            points.sort((left, right) => left.voltage - right.voltage);
+            return points.slice(0, 8);
+        }
+
+        function renderBatteryProfileDetails() {
+            const selectedProfile = Number(appState.settings.batteryProfileId ?? 0);
+            const isCustom = selectedProfile === 8;
+            const resolved = appState.settings.batteryResolved || {};
+            const samplePoints = Array.isArray(resolved.samplePoints) && resolved.samplePoints.length > 0
+                ? resolved.samplePoints
+                : (appState.settings.batteryCurve || []);
+
+            document.getElementById('batteryResolvedPanel').style.display = isCustom ? 'none' : 'block';
+            document.getElementById('batteryCustomPanel').style.display = isCustom ? 'block' : 'none';
+
+            document.getElementById('batteryProfileSummary').textContent = resolved.summary || appState.settings.batteryProfileName || '--';
+            document.getElementById('batteryCellRange').textContent = `${Number(resolved.cellMin ?? 0).toFixed(2)} / ${Number(resolved.cellNominal ?? 0).toFixed(2)} / ${Number(resolved.cellMax ?? 0).toFixed(2)} V`;
+            document.getElementById('batteryResolvedCellCount').textContent = `${Number(resolved.cellCount ?? appState.settings.batteryCellCount ?? 0)}S`;
+            document.getElementById('batteryPackRange').textContent = `${Number(resolved.packMin ?? 0).toFixed(2)} - ${Number(resolved.packMax ?? 0).toFixed(2)} V`;
+            document.getElementById('batteryResolvedLowWarn').textContent = `${Number(resolved.lowWarn ?? 0).toFixed(2)} V`;
+            document.getElementById('batteryResolvedSampleMs').textContent = `${Number(appState.settings.batterySampleIntervalMs ?? 0)} ms`;
+            document.getElementById('batteryResolvedCurve').value = formatCurvePoints(samplePoints);
+        }
+
         function hydrateSettingsForm() {
             document.getElementById('apSsid').value = appState.wifiConfig.apSsid || 'ApexPyro';
             document.getElementById('apPassword').value = appState.wifiConfig.apPassword || 'apexFIRE!pyro';
@@ -1138,6 +1298,19 @@
             document.getElementById('contLoGood').value = appState.settings.continuityLoGood ?? DEFAULT_SETTINGS.continuityLoGood;
             document.getElementById('contHiGood').value = appState.settings.continuityHiGood ?? DEFAULT_SETTINGS.continuityHiGood;
             document.getElementById('contLoOpen').value = appState.settings.continuityLoOpen ?? DEFAULT_SETTINGS.continuityLoOpen;
+            document.getElementById('batteryProfile').value = String(appState.settings.batteryProfileId ?? 0);
+            document.getElementById('batteryCellCount').value = Number(appState.settings.batteryCellCount ?? DEFAULT_SETTINGS.batteryCellCount);
+            document.getElementById('batteryPackMin').value = Number(appState.settings.batteryPackMin ?? DEFAULT_SETTINGS.batteryPackMin);
+            document.getElementById('batteryPackMax').value = Number(appState.settings.batteryPackMax ?? DEFAULT_SETTINGS.batteryPackMax);
+            document.getElementById('batteryLowWarn').value = Number(appState.settings.batteryLowWarn ?? DEFAULT_SETTINGS.batteryLowWarn);
+            document.getElementById('batterySampleIntervalMs').value = Number(appState.settings.batterySampleIntervalMs ?? DEFAULT_SETTINGS.batterySampleIntervalMs);
+            if (document.activeElement !== document.getElementById('batteryCurveEditor')) {
+                const batteryCurve = Array.isArray(appState.settings.batteryCurve) && appState.settings.batteryCurve.length > 0
+                    ? appState.settings.batteryCurve
+                    : DEFAULT_SETTINGS.batteryCurve;
+                document.getElementById('batteryCurveEditor').value = formatCurvePoints(batteryCurve);
+            }
+            renderBatteryProfileDetails();
             if (!builderDirty) {
                 document.getElementById('aux1Name').value = appState.auxNames[0] || DEFAULT_AUX_NAMES[0];
                 document.getElementById('aux2Name').value = appState.auxNames[1] || DEFAULT_AUX_NAMES[1];
@@ -1722,6 +1895,43 @@
             showToast('Continuity thresholds updated', 'success');
         }
 
+        function saveBatterySettings() {
+            if (!requireControllerAction('save battery profile')) {
+                return;
+            }
+
+            const profileId = Number(document.getElementById('batteryProfile').value || 0);
+            wsSend({ type: 'set_setting', key: 'bat_prof', value: profileId });
+
+            if (profileId === 8) {
+                const cellCount = Number(document.getElementById('batteryCellCount').value || 16);
+                const packMin = Number(document.getElementById('batteryPackMin').value || 40);
+                const packMax = Number(document.getElementById('batteryPackMax').value || 58.4);
+                const lowWarn = Number(document.getElementById('batteryLowWarn').value || 46);
+                const sampleIntervalMs = Number(document.getElementById('batterySampleIntervalMs').value || 5000);
+                const curvePoints = parseBatteryCurveEditor();
+
+                if (curvePoints.length < 2) {
+                    showToast('Custom profile requires at least 2 valid lookup points', 'error');
+                    return;
+                }
+
+                if (packMax <= packMin) {
+                    showToast('Pack max voltage must be greater than pack min voltage', 'error');
+                    return;
+                }
+
+                wsSend({ type: 'set_setting', key: 'bat_cells', value: cellCount });
+                wsSend({ type: 'set_setting', key: 'bat_min', value: packMin });
+                wsSend({ type: 'set_setting', key: 'bat_max', value: packMax });
+                wsSend({ type: 'set_setting', key: 'bat_warn', value: lowWarn });
+                wsSend({ type: 'set_setting', key: 'bat_sm_ms', value: sampleIntervalMs });
+                wsSend({ type: 'set_setting', key: 'bat_curve', value: curvePoints });
+            }
+
+            showToast('Battery profile settings saved', 'success');
+        }
+
         function saveAuxName(relay) {
             if (!requireControllerAction('rename auxiliary relays')) {
                 return;
@@ -2069,6 +2279,11 @@
             document.getElementById('abortOnDisconnect').addEventListener('change', saveSafetySettings);
             document.getElementById('eStopResetMode').addEventListener('change', saveSafetySettings);
             document.getElementById('calibrateBtn').addEventListener('click', saveContinuityThresholds);
+            document.getElementById('batteryProfile').addEventListener('change', () => {
+                appState.settings.batteryProfileId = Number(document.getElementById('batteryProfile').value || 0);
+                renderBatteryProfileDetails();
+            });
+            document.getElementById('saveBatteryBtn').addEventListener('click', saveBatterySettings);
             document.getElementById('relayTestBtn').addEventListener('click', startRelayTest);
             document.getElementById('testStopBtn').addEventListener('click', () => wsSend({ type: 'relay_test', action: 'stop' }));
             document.getElementById('enableAllBtn').addEventListener('click', () => setAllBuilderZonesEnabled(true));

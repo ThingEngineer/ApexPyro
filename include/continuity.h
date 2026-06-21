@@ -26,6 +26,17 @@ public:
     void setThresholds(float loGood, float hiGood, float loOpen);
     
 private:
+    struct ResolvedBatteryProfile {
+        BatteryProfile profile;
+        uint8_t cellCount;
+        float packMin;
+        float packMax;
+        float lowWarn;
+        uint16_t sampleIntervalMs;
+        uint8_t pointCount;
+        BatteryCurvePoint points[BATTERY_MAX_CURVE_POINTS];
+    };
+
     bool adsAvailable;
     uint32_t lastAdsRecoveryAttemptMs;
 
@@ -41,6 +52,13 @@ private:
     float threshLoGood;
     float threshHiGood;
     float threshLoOpen;
+
+    float batteryVoltageRaw;
+    float batteryVoltageFiltered;
+    int batteryPercent;
+    uint32_t lastBatteryConfigRefreshMs;
+    uint32_t lastBatteryPercentCalcMs;
+    ResolvedBatteryProfile batteryProfile;
     
     // Helper methods
     bool initializeAds(bool isRecoveryAttempt);
@@ -49,6 +67,9 @@ private:
     void setMuxPosition(uint8_t position);
     void scanAllZones();
     void readBatteryVoltage();
+    void refreshBatteryProfile(bool force = false);
+    void applyPresetProfile(BatteryProfile profileId, uint8_t overrideCellCount);
+    int calculateBatteryPercent(float packVoltage) const;
     ContinuityStatus classifyVoltage(float voltage);
     float readAdcChannel(uint8_t channel);
 };

@@ -446,6 +446,65 @@ void WebSocketHandler::broadcastFullState(uint32_t targetClientId) {
     settings["continuityLoGood"] = storage.getContinuityLoGood();
     settings["continuityHiGood"] = storage.getContinuityHiGood();
     settings["continuityLoOpen"] = storage.getContinuityLoOpen();
+    uint8_t batteryProfileId = storage.getBatteryProfileId();
+    settings["batteryProfileId"] = batteryProfileId;
+    settings["batteryProfileName"] = getBatteryProfileLabel(static_cast<BatteryProfile>(batteryProfileId));
+    settings["batteryCellCount"] = storage.getBatteryCellCount();
+    settings["batteryPackMin"] = storage.getBatteryPackMin();
+    settings["batteryPackMax"] = storage.getBatteryPackMax();
+    settings["batteryLowWarn"] = storage.getBatteryLowWarn();
+    settings["batterySampleIntervalMs"] = storage.getBatterySampleIntervalMs();
+
+    BatteryCurvePoint customCurve[BATTERY_MAX_CURVE_POINTS];
+    uint8_t customCurveCount = 0;
+    storage.getBatteryCurve(customCurve, customCurveCount);
+    JsonArray customCurveArray = settings.createNestedArray("batteryCurve");
+    for (uint8_t i = 0; i < customCurveCount; i++) {
+        JsonObject point = customCurveArray.createNestedObject();
+        point["voltage"] = customCurve[i].voltage;
+        point["soc"] = customCurve[i].soc;
+    }
+
+    JsonObject resolved = settings.createNestedObject("batteryResolved");
+    BatteryProfile resolvedProfileId = static_cast<BatteryProfile>(batteryProfileId);
+    resolved["isCustom"] = resolvedProfileId == BatteryProfile::CUSTOM;
+    resolved["profileName"] = getBatteryProfileLabel(resolvedProfileId);
+
+    if (resolvedProfileId == BatteryProfile::CUSTOM) {
+        float packMin = storage.getBatteryPackMin();
+        float packMax = storage.getBatteryPackMax();
+        uint8_t cellCount = storage.getBatteryCellCount();
+        resolved["cellCount"] = cellCount;
+        resolved["packMin"] = packMin;
+        resolved["packMax"] = packMax;
+        resolved["lowWarn"] = storage.getBatteryLowWarn();
+        resolved["cellMin"] = packMin / cellCount;
+        resolved["cellNominal"] = ((packMin + packMax) * 0.5f) / cellCount;
+        resolved["cellMax"] = packMax / cellCount;
+        resolved["summary"] = "Custom voltage-to-SoC lookup profile";
+        JsonArray sample = resolved.createNestedArray("samplePoints");
+        for (uint8_t i = 0; i < customCurveCount; i++) {
+            JsonObject point = sample.createNestedObject();
+            point["voltage"] = customCurve[i].voltage;
+            point["soc"] = customCurve[i].soc;
+        }
+    } else {
+        const BatteryProfilePreset* preset = getBatteryProfilePreset(resolvedProfileId);
+        resolved["cellCount"] = preset->defaultCellCount;
+        resolved["packMin"] = preset->points[0].voltage * preset->defaultCellCount;
+        resolved["packMax"] = preset->points[preset->pointCount - 1].voltage * preset->defaultCellCount;
+        resolved["lowWarn"] = preset->lowWarnCell * preset->defaultCellCount;
+        resolved["cellMin"] = preset->cellMin;
+        resolved["cellNominal"] = preset->cellNominal;
+        resolved["cellMax"] = preset->cellMax;
+        resolved["summary"] = preset->summary;
+        JsonArray sample = resolved.createNestedArray("samplePoints");
+        for (uint8_t i = 0; i < preset->pointCount; i++) {
+            JsonObject point = sample.createNestedObject();
+            point["voltage"] = preset->points[i].voltage * preset->defaultCellCount;
+            point["soc"] = preset->points[i].soc;
+        }
+    }
 
     JsonArray auxNames = doc.createNestedArray("auxNames");
     auxNames.add(storage.getAuxRelayName(0));
@@ -911,7 +970,7 @@ void WebSocketHandler::handleZoneConfigCommand(uint32_t clientId, const char* da
         return;
     }
 
-    StaticJsonDocument<512> doc;
+    DynamicJsonDocument doc(2048);
     deserializeJson(doc, data);
 
     uint8_t zone = doc["zone"] | 255;
@@ -993,6 +1052,41 @@ void WebSocketHandler::handleSettingCommand(uint32_t clientId, const char* data)
         storage.setContinuityThresholds(storage.getContinuityLoGood(), valueAsFloat(), storage.getContinuityLoOpen());
     } else if (strcmp(key, NVS_KEYS::SETTING_CONTINUITY_LO_OPEN) == 0) {
         storage.setContinuityThresholds(storage.getContinuityLoGood(), storage.getContinuityHiGood(), valueAsFloat());
+    } else if (strcmp(key, NVS_KEYS::SETTING_BATTERY_PROFILE) == 0) {
+        int profileId = constrain(valueAsInt(), 0, static_cast<int>(BatteryProfile::CUSTOM));
+        storage.setBatteryProfileId(static_cast<uint8_t>(profileId));
+    } else if (strcmp(key, NVS_KEYS::SETTING_BATTERY_CELL_COUNT) == 0) {
+        storage.setBatteryCellCount(static_cast<uint8_t>(constrain(valueAsInt(), 1, 64)));
+    } else if (strcmp(key, NVS_KEYS::SETTING_BATTERY_PACK_MIN) == 0) {
+        storage.setBatteryPackMin(valueAsFloat());
+    } else if (strcmp(key, NVS_KEYS::SETTING_BATTERY_PACK_MAX) == 0) {
+        storage.setBatteryPackMax(valueAsFloat());
+    } else if (strcmp(key, NVS_KEYS::SETTING_BATTERY_LOW_WARN) == 0) {
+        storage.setBatteryLowWarn(valueAsFloat());
+    } else if (strcmp(key, NVS_KEYS::SETTING_BATTERY_SAMPLE_INTERVAL) == 0) {
+        storage.setBatterySampleIntervalMs(static_cast<uint16_t>(constrain(valueAsInt(), 500, 10000)));
+    } else if (strcmp(key, "bat_curve") == 0 && value.is<JsonArray>()) {
+        JsonArray inputCurve = value.as<JsonArray>();
+        BatteryCurvePoint points[BATTERY_MAX_CURVE_POINTS];
+        uint8_t pointCount = 0;
+        for (JsonObject point : inputCurve) {
+            if (pointCount >= BATTERY_MAX_CURVE_POINTS) {
+                break;
+            }
+            if (!point.containsKey("voltage") || !point.containsKey("soc")) {
+                continue;
+            }
+            points[pointCount].voltage = point["voltage"].as<float>();
+            points[pointCount].soc = static_cast<uint8_t>(constrain(point["soc"].as<int>(), 0, 100));
+            pointCount++;
+        }
+
+        if (pointCount >= 2) {
+            for (uint8_t i = pointCount; i < BATTERY_MAX_CURVE_POINTS; i++) {
+                points[i] = DEFAULT_BATTERY_CUSTOM_POINTS[i];
+            }
+            storage.setBatteryCurve(points, pointCount);
+        }
     } else {
         if (value.is<const char*>()) {
             storage.saveSetting(key, String(value.as<const char*>()));
