@@ -425,7 +425,18 @@ void WebSocketHandler::sendHeartbeat() {
 }
 
 void WebSocketHandler::broadcastFullState(uint32_t targetClientId) {
+    if (targetClientId == 0) {
+        if (controllerClientId != 0) {
+            broadcastFullState(controllerClientId);
+        }
+        for (uint32_t viewerClientId : viewerClientIds) {
+            broadcastFullState(viewerClientId);
+        }
+        return;
+    }
+
     DynamicJsonDocument doc(12288);
+    bool includeWiFiSecrets = (targetClientId != 0) && (targetClientId == controllerClientId);
 
     doc["type"] = "full_state";
     doc["masterArmed"] = relayManager.isMasterArmed();
@@ -443,9 +454,9 @@ void WebSocketHandler::broadcastFullState(uint32_t targetClientId) {
 
     JsonObject wifi = doc.createNestedObject("wifiConfig");
     wifi["apSsid"] = storage.getApSSID();
-    wifi["apPassword"] = storage.getApPassword();
+    wifi["apPassword"] = includeWiFiSecrets ? storage.getApPassword() : "";
     wifi["clientSsid"] = storage.getClientSSID();
-    wifi["clientPassword"] = storage.getClientPassword();
+    wifi["clientPassword"] = includeWiFiSecrets ? storage.getClientPassword() : "";
     wifi["connected"] = wifiManager.isClientConnected();
     wifi["currentSsid"] = wifiManager.getCurrentSSID();
     wifi["apActive"] = wifiManager.isAPActive();
@@ -548,11 +559,6 @@ void WebSocketHandler::broadcastFullState(uint32_t targetClientId) {
 
     String json;
     serializeJson(doc, json);
-
-    if (targetClientId == 0) {
-        ws.textAll(json);
-        return;
-    }
 
     AsyncWebSocketClient* targetClient = ws.client(targetClientId);
     if (targetClient) {
