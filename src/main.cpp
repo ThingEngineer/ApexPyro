@@ -82,27 +82,6 @@ bool initPw535(uint8_t address) {
   return ok0 && ok1;
 }
 
-void setSingleRelayOnBoard(uint8_t address, uint8_t relayIndex) {
-  uint8_t portA = 0x00;
-  uint8_t portB = 0x00;
-  if (relayIndex < 8) {
-    portA = static_cast<uint8_t>(1U << relayIndex);
-  } else {
-    portB = static_cast<uint8_t>(1U << (relayIndex - 8));
-  }
-  writeRegister(address, REG_OUTPUT_PORT0, portA);
-  writeRegister(address, REG_OUTPUT_PORT1, portB);
-}
-
-void setSingleZone(uint8_t zoneIndex) {
-  uint8_t boardIndex = zoneIndex / RELAYS_PER_BOARD;
-  uint8_t relayIndex = zoneIndex % RELAYS_PER_BOARD;
-  setAllRelaysOff();
-  if (boardIndex < boardPresentCount) {
-    setSingleRelayOnBoard(BOARD_ADDRS[boardIndex], relayIndex);
-  }
-}
-
 // ============================================================================
 // SETUP
 // ============================================================================

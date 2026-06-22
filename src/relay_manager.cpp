@@ -10,7 +10,6 @@ static const uint8_t REG_OUTPUT_PORT1 = 0x03;
 // Forward declarations of functions in main.cpp
 extern bool writeRegister(uint8_t address, uint8_t reg, uint8_t value);
 extern void setAllRelaysOffOnBoard(uint8_t address);
-extern void setSingleRelayOnBoard(uint8_t address, uint8_t relayIndex);
 
 RelayManager relayManager;
 
@@ -239,21 +238,6 @@ bool RelayManager::consumeFireComplete() {
 // ============================================================================
 // Direct Relay Control (integrates with main.cpp functions)
 // ============================================================================
-
-void RelayManager::setSingleZone(uint8_t zoneIndex) {
-    if (zoneIndex >= MAX_ZONES) {
-        return;
-    }
-
-    uint8_t boardIndex = zoneIndex / RELAYS_PER_BOARD;
-    uint8_t relayIndex = zoneIndex % RELAYS_PER_BOARD;
-    
-    setAllRelaysOff();
-    
-    if (boardIndex < boardPresentCount && boardPresent[boardIndex]) {
-        setSingleRelayOnBoard(BOARD_ADDRS[boardIndex], relayIndex);
-    }
-}
 
 void RelayManager::setAllRelaysOff() {
     for (uint8_t i = 0; i < boardPresentCount; i++) {

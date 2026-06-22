@@ -28,7 +28,6 @@ public:
     uint8_t getFiringZoneIdx();
     
     // Direct relay control (used by main firing logic)
-    void setSingleZone(uint8_t zoneIndex);
     void setAllRelaysOff();
     
     // Board detection (populated by main.cpp)

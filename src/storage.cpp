@@ -81,10 +81,6 @@ void StorageManager::begin() {
         prefs.begin(NVS_KEYS::NS_ZONES, false);
         prefs.clear();
         prefs.end();
-
-        prefs.begin(NVS_KEYS::NS_GROUPS, false);
-        prefs.clear();
-        prefs.end();
     }
 
     prefs.begin(NVS_KEYS::NS_AUX, false);
@@ -95,11 +91,6 @@ void StorageManager::begin() {
 
     // Clear now-unused NVS zone namespace to reclaim flash space.
     prefs.begin(NVS_KEYS::NS_ZONES, false);
-    prefs.clear();
-    prefs.end();
-
-    // Legacy namespace from removed standalone group editor.
-    prefs.begin(NVS_KEYS::NS_GROUPS, false);
     prefs.clear();
     prefs.end();
 

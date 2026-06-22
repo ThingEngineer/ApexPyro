@@ -267,7 +267,6 @@ namespace NVS_KEYS {
     // Namespaces
     static const char* NS_WIFI = "wifi";
     static const char* NS_ZONES = "zones";
-    static const char* NS_GROUPS = "groups";
     static const char* NS_SETTINGS = "settings";
     static const char* NS_AUX = "aux";
 
@@ -283,11 +282,6 @@ namespace NVS_KEYS {
     static const char* ZONE_ENABLED_PREFIX = "en_";
     static const char* ZONE_GROUP_PREFIX = "grp_";
     static const char* ZONE_ORDER_PREFIX = "ord_";
-
-    // Group keys (suffix = group index)
-    static const char* GROUP_NAME_PREFIX = "grp_name_";
-    static const char* GROUP_MEMBERS_PREFIX = "grp_mbrs_";
-    static const char* GROUP_ORDER_PREFIX = "grp_ord_";
 
     // Settings keys
     static const char* SETTING_IGNITER_DURATION = "ign_dur";
