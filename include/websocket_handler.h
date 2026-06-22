@@ -45,6 +45,16 @@ private:
         String payload;
     };
 
+    struct ClientCommandState {
+        uint32_t clientId;
+        uint64_t lastTimestampMs;
+    };
+
+    struct CommandNonce {
+        uint32_t clientId;
+        String nonce;
+    };
+
     AsyncWebServer server;
     AsyncWebSocket ws;
     
@@ -63,12 +73,14 @@ private:
     std::vector<uint32_t> viewerClientIds;
     std::vector<ClientIdentity> clientIdentities;
     std::vector<ClientPayloadBuffer> payloadBuffers;
+    std::vector<ClientCommandState> commandStates;
+    std::vector<CommandNonce> recentCommandNonces;
     
     // Heartbeat & timeout
     void handleHeartbeatTimeout();
     void sendHeartbeat();
     void markStateDirty();
-    bool validateChecksum(const char* command, uint8_t zone, uint32_t timestamp, const char* checksum);
+    bool validateCommandSignature(uint32_t clientId, const char* command, uint8_t value, uint64_t timestampMs, const char* nonce, const char* signature);
     
     // Message handlers
     void handleFireCommand(uint32_t clientId, const char* data);
@@ -124,7 +136,7 @@ private:
     void stopRelayTest(bool aborted);
     
     // Utility
-    uint32_t calculateCrc32(const String& data);
+    String calculateHmacSha256(const String& key, const String& data);
     String formatContinuityArray();
 
     bool relayTestActive;

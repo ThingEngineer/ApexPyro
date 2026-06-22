@@ -1100,21 +1100,24 @@
             });
         }
 
-        function calcChecksum(cmd, zone, timestamp) {
-            const data = `${cmd}:${zone}:${timestamp}`;
-            let crc = 0xffffffff;
-            for (let i = 0; i < data.length; i++) {
-                const byte = data.charCodeAt(i) & 0xff;
-                for (let bitIndex = 0; bitIndex < 8; bitIndex++) {
-                    const bit = (byte >> (7 - bitIndex)) & 1;
-                    const topBit = (crc >>> 31) & 1;
-                    crc = (crc << 1) >>> 0;
-                    if ((topBit ^ bit) !== 0) {
-                        crc = (crc ^ 0x04c11db7) >>> 0;
-                    }
-                }
+        async function calcCommandSignature(cmd, value, timestampMs, nonce) {
+            if (!window.crypto || !window.crypto.subtle) {
+                throw new Error('WebCrypto unavailable');
             }
-            return crc.toString(16).padStart(8, '0');
+
+            const encoder = new TextEncoder();
+            const keyData = encoder.encode(getOrCreateClientKey());
+            const data = encoder.encode(`${cmd}:${value}:${timestampMs}:${nonce}`);
+            const cryptoKey = await window.crypto.subtle.importKey(
+                'raw',
+                keyData,
+                { name: 'HMAC', hash: 'SHA-256' },
+                false,
+                ['sign']
+            );
+            const signatureBuffer = await window.crypto.subtle.sign('HMAC', cryptoKey, data);
+            const bytes = new Uint8Array(signatureBuffer);
+            return Array.from(bytes).map((byte) => byte.toString(16).padStart(2, '0')).join('');
         }
 
         function getOrCreateClientKey() {
@@ -1188,10 +1191,30 @@
 
             const payload = { ...obj };
             if (payload.type === 'fire' || payload.type === 'fire_group' || payload.type === 'arm' || payload.type === 'auto_start') {
-                const ts = Math.floor(Date.now() / 1000);
-                const checksumValue = payload.zone ?? payload.group ?? (payload.state ? 1 : 0);
-                payload.ts = ts;
-                payload.cs = calcChecksum(payload.type.toUpperCase(), checksumValue, ts);
+                if (!window.crypto || !window.crypto.subtle) {
+                    showToast('Browser crypto support is required for command signing', 'error');
+                    return false;
+                }
+
+                const timestampMs = Date.now();
+                const signedValue = payload.zone ?? payload.group ?? (payload.state ? 1 : 0);
+                const nonce = (window.crypto && typeof window.crypto.randomUUID === 'function')
+                    ? window.crypto.randomUUID()
+                    : `${timestampMs}-${Math.floor(Math.random() * 1000000)}`;
+
+                payload.ts = timestampMs;
+                payload.nonce = nonce;
+
+                calcCommandSignature(payload.type.toUpperCase(), signedValue, timestampMs, nonce)
+                    .then((signature) => {
+                        payload.sig = signature;
+                        ws.send(JSON.stringify(payload));
+                    })
+                    .catch((error) => {
+                        console.error('Command signing failed:', error);
+                        showToast('Command signing failed', 'error');
+                    });
+                return true;
             }
 
             ws.send(JSON.stringify(payload));

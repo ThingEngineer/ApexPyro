@@ -6,12 +6,14 @@
 #include "show_runner.h"
 #include "logger.h"
 #include <LittleFS.h>
+#include <mbedtls/md.h>
 
 namespace {
 const uint32_t FULL_STATE_BROADCAST_MIN_INTERVAL_MS = 300;
 const uint32_t ROLE_LOCK_RECLAIM_TIMEOUT_MS = 15000;
 const uint32_t SERIAL_MONITOR_FLUSH_INTERVAL_MS = 150;
 const size_t SERIAL_MONITOR_MAX_BATCH_LINES = 16;
+const size_t MAX_TRACKED_COMMAND_NONCES = 64;
 }
 
 WebSocketHandler wsHandler;
@@ -109,30 +111,91 @@ void WebSocketHandler::assignRoleOnConnect(uint32_t clientId) {
     Serial.printf("[WebSocketHandler] Client %u assigned VIEWER role\n", clientId);
 }
 
-uint32_t WebSocketHandler::calculateCrc32(const String& data) {
-    uint32_t crc = 0xffffffff;
-    for (size_t i = 0; i < data.length(); i++) {
-        uint8_t byte = data[i];
-        for (int j = 0; j < 8; j++) {
-            uint32_t bit = (byte >> (7-j)) & 1;
-            uint32_t c = (crc >> 31) & 1;
-            crc = crc << 1;
-            if (c ^ bit) crc = crc ^ 0x04c11db7;
-        }
+String WebSocketHandler::calculateHmacSha256(const String& key, const String& data) {
+    const mbedtls_md_info_t* mdInfo = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+    if (mdInfo == nullptr) {
+        return "";
     }
-    return crc;
+
+    uint8_t digest[32];
+    int rc = mbedtls_md_hmac(
+        mdInfo,
+        reinterpret_cast<const unsigned char*>(key.c_str()),
+        key.length(),
+        reinterpret_cast<const unsigned char*>(data.c_str()),
+        data.length(),
+        digest
+    );
+    if (rc != 0) {
+        return "";
+    }
+
+    char hex[65];
+    for (size_t i = 0; i < 32; i++) {
+        sprintf(&hex[i * 2], "%02x", digest[i]);
+    }
+    hex[64] = '\0';
+
+    return String(hex);
 }
 
-bool WebSocketHandler::validateChecksum(const char* command, uint8_t zone, uint32_t timestamp, const char* checksum) {
-    // Build the string that was checksummed: "cmd:zone:timestamp"
-    String data = String(command) + ":" + String(zone) + ":" + String(timestamp);
-    uint32_t computed = calculateCrc32(data);
-    
-    // Convert computed CRC to hex and compare
-    char hexStr[9];
-    sprintf(hexStr, "%08x", computed);
-    
-    return strcmp(hexStr, checksum) == 0;
+bool WebSocketHandler::validateCommandSignature(uint32_t clientId, const char* command, uint8_t value, uint64_t timestampMs, const char* nonce, const char* signature) {
+    if (clientId == 0 || command == nullptr || nonce == nullptr || signature == nullptr) {
+        return false;
+    }
+
+    if (strlen(nonce) < 8 || strlen(nonce) > 80 || strlen(signature) != 64) {
+        return false;
+    }
+
+    String clientKey = getClientIdentity(clientId);
+    if (clientKey.length() == 0) {
+        return false;
+    }
+
+    for (const auto& recentNonce : recentCommandNonces) {
+        if (recentNonce.clientId == clientId && recentNonce.nonce == nonce) {
+            return false;
+        }
+    }
+
+    for (auto& state : commandStates) {
+        if (state.clientId == clientId) {
+            if (timestampMs < state.lastTimestampMs) {
+                return false;
+            }
+            state.lastTimestampMs = timestampMs;
+            break;
+        }
+    }
+
+    bool foundCommandState = false;
+    for (const auto& state : commandStates) {
+        if (state.clientId == clientId) {
+            foundCommandState = true;
+            break;
+        }
+    }
+    if (!foundCommandState) {
+        commandStates.push_back({clientId, timestampMs});
+    }
+
+    String data = String(command) + ":" + String(value) + ":" + String(static_cast<unsigned long long>(timestampMs)) + ":" + String(nonce);
+    String expectedSignature = calculateHmacSha256(clientKey, data);
+    if (expectedSignature.length() == 0) {
+        return false;
+    }
+
+    if (!expectedSignature.equalsIgnoreCase(signature)) {
+        return false;
+    }
+
+    recentCommandNonces.push_back({clientId, String(nonce)});
+    if (recentCommandNonces.size() > MAX_TRACKED_COMMAND_NONCES) {
+        recentCommandNonces.erase(recentCommandNonces.begin());
+    }
+
+    return true;
 }
 
 void WebSocketHandler::begin() {
@@ -398,6 +461,21 @@ void WebSocketHandler::removeClient(uint32_t clientId) {
             clientIdentities.erase(it);
             break;
         }
+    }
+
+    for (auto it = commandStates.begin(); it != commandStates.end(); ++it) {
+        if (it->clientId == clientId) {
+            commandStates.erase(it);
+            break;
+        }
+    }
+
+    for (auto it = recentCommandNonces.begin(); it != recentCommandNonces.end();) {
+        if (it->clientId == clientId) {
+            it = recentCommandNonces.erase(it);
+            continue;
+        }
+        ++it;
     }
 }
 
@@ -790,11 +868,12 @@ void WebSocketHandler::handleFireCommand(uint32_t clientId, const char* data) {
     deserializeJson(doc, data);
     
     uint8_t zone = doc["zone"] | 0;
-    uint32_t ts = doc["ts"] | 0;
-    const char* cs = doc["cs"] | "";
-    
-    if (!validateChecksum("FIRE", zone, ts, cs)) {
-        broadcastError("BAD_CHECKSUM", "Checksum validation failed");
+    uint64_t ts = doc["ts"] | 0;
+    const char* nonce = doc["nonce"] | "";
+    const char* sig = doc["sig"] | "";
+
+    if (!validateCommandSignature(clientId, "FIRE", zone, ts, nonce, sig)) {
+        broadcastError("BAD_SIGNATURE", "Command signature validation failed");
         return;
     }
 
@@ -827,11 +906,12 @@ void WebSocketHandler::handleArmCommand(uint32_t clientId, const char* data) {
     deserializeJson(doc, data);
     
     bool state = doc["state"] | false;
-    uint32_t ts = doc["ts"] | 0;
-    const char* cs = doc["cs"] | "";
-    
-    if (!validateChecksum("ARM", state ? 1 : 0, ts, cs)) {
-        broadcastError("BAD_CHECKSUM", "Checksum validation failed");
+    uint64_t ts = doc["ts"] | 0;
+    const char* nonce = doc["nonce"] | "";
+    const char* sig = doc["sig"] | "";
+
+    if (!validateCommandSignature(clientId, "ARM", state ? 1 : 0, ts, nonce, sig)) {
+        broadcastError("BAD_SIGNATURE", "Command signature validation failed");
         return;
     }
 
@@ -859,11 +939,12 @@ void WebSocketHandler::handleFireGroupCommand(uint32_t clientId, const char* dat
     deserializeJson(doc, data);
 
     uint8_t groupId = doc["group"] | 0;
-    uint32_t ts = doc["ts"] | 0;
-    const char* cs = doc["cs"] | "";
+    uint64_t ts = doc["ts"] | 0;
+    const char* nonce = doc["nonce"] | "";
+    const char* sig = doc["sig"] | "";
 
-    if (!validateChecksum("FIRE_GROUP", groupId, ts, cs)) {
-        broadcastError("BAD_CHECKSUM", "Checksum validation failed");
+    if (!validateCommandSignature(clientId, "FIRE_GROUP", groupId, ts, nonce, sig)) {
+        broadcastError("BAD_SIGNATURE", "Command signature validation failed");
         return;
     }
 
@@ -970,10 +1051,11 @@ void WebSocketHandler::handleAutoStartCommand(uint32_t clientId, const char* dat
     deserializeJson(doc, data);
 
     uint8_t zone = doc["zone"] | 0;
-    uint32_t ts = doc["ts"] | 0;
-    const char* cs = doc["cs"] | "";
-    if (!validateChecksum("AUTO_START", zone, ts, cs)) {
-        broadcastError("BAD_CHECKSUM", "Checksum validation failed");
+    uint64_t ts = doc["ts"] | 0;
+    const char* nonce = doc["nonce"] | "";
+    const char* sig = doc["sig"] | "";
+    if (!validateCommandSignature(clientId, "AUTO_START", zone, ts, nonce, sig)) {
+        broadcastError("BAD_SIGNATURE", "Command signature validation failed");
         return;
     }
 
