@@ -159,7 +159,7 @@
                                 <div class="file-drop-zone-actions">
                                     <button id="builderShowBrowseBtn" class="btn btn-secondary"
                                         type="button">Browse</button>
-                                    <button id="builderShowImportBtn" class="btn btn-primary" type="button">Import Show
+                                    <button id="builderShowImportBtn" class="btn btn-primary" type="button" disabled>Import Show
                                         Config</button>
                                 </div>
                                 <p class="file-drop-zone-name" id="builderShowFileName">No file selected</p>
@@ -581,7 +581,7 @@
                         <p class="file-drop-zone-hint">or use browse to select a file</p>
                         <div class="file-drop-zone-actions">
                             <button id="settingsBrowseBtn" class="btn btn-secondary" type="button">Browse</button>
-                            <button id="settingsImportBtn" class="btn btn-primary" type="button">Import
+                            <button id="settingsImportBtn" class="btn btn-primary" type="button" disabled>Import
                                 Settings</button>
                         </div>
                         <p class="file-drop-zone-name" id="settingsFileName">No file selected</p>
@@ -2892,11 +2892,13 @@
                 if (!file) {
                     fileName.textContent = 'No file selected';
                     dropZone.classList.remove('has-file');
+                    importButton.disabled = true;
                     return;
                 }
 
                 fileName.textContent = file.name;
                 dropZone.classList.add('has-file');
+                importButton.disabled = false;
             };
 
             browseButton.addEventListener('click', () => fileInput.click());
