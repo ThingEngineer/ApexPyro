@@ -79,6 +79,8 @@ private:
     // Heartbeat & timeout
     void handleHeartbeatTimeout();
     void sendHeartbeat();
+    bool requireControllerRole(uint32_t clientId, const char* actionMessage);
+    void sendJsonToAll(JsonDocument& doc);
     void markStateDirty();
     bool parseJsonPayload(JsonDocument& doc, const char* data, const char* errorMessage);
     bool validateCommandSignature(uint32_t clientId, const char* command, uint8_t value, uint64_t timestampMs, const char* nonce, const char* signature);

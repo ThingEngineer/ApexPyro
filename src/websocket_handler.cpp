@@ -452,6 +452,21 @@ void WebSocketHandler::markStateDirty() {
     fullStateDirty = true;
 }
 
+bool WebSocketHandler::requireControllerRole(uint32_t clientId, const char* actionMessage) {
+    if (clientId == controllerClientId) {
+        return true;
+    }
+
+    broadcastError("UNAUTHORIZED", actionMessage);
+    return false;
+}
+
+void WebSocketHandler::sendJsonToAll(JsonDocument& doc) {
+    String json;
+    serializeJson(doc, json);
+    ws.textAll(json);
+}
+
 bool WebSocketHandler::parseJsonPayload(JsonDocument& doc, const char* data, const char* errorMessage) {
     DeserializationError error = deserializeJson(doc, data);
     if (error) {
@@ -505,10 +520,7 @@ void WebSocketHandler::promoteViewerToController() {
 void WebSocketHandler::sendHeartbeat() {
     StaticJsonDocument<64> doc;
     doc["type"] = "ping";
-
-    String json;
-    serializeJson(doc, json);
-    ws.textAll(json);
+    sendJsonToAll(doc);
 }
 
 void WebSocketHandler::broadcastFullState(uint32_t targetClientId) {
@@ -664,9 +676,7 @@ void WebSocketHandler::broadcastContinuity() {
         zones.add((uint8_t)status);
     }
 
-    String json;
-    serializeJson(doc, json);
-    ws.textAll(json);
+    sendJsonToAll(doc);
 }
 
 void WebSocketHandler::broadcastBatteryStatus() {
@@ -676,9 +686,7 @@ void WebSocketHandler::broadcastBatteryStatus() {
     doc["percent"] = continuityManager.getBatteryPercent();
     doc["voltage"] = continuityManager.getBatteryVoltage();
     
-    String json;
-    serializeJson(doc, json);
-    ws.textAll(json);
+    sendJsonToAll(doc);
 }
 
 void WebSocketHandler::broadcastWiFiStatus() {
@@ -690,9 +698,7 @@ void WebSocketHandler::broadcastWiFiStatus() {
     doc["ssid"] = wifiManager.getCurrentSSID();
     doc["connected"] = wifiManager.isClientConnected();
     
-    String json;
-    serializeJson(doc, json);
-    ws.textAll(json);
+    sendJsonToAll(doc);
 }
 
 void WebSocketHandler::broadcastZoneFired(uint8_t zoneIdx, uint32_t progressDuration, uint32_t igniterDuration) {
@@ -703,9 +709,7 @@ void WebSocketHandler::broadcastZoneFired(uint8_t zoneIdx, uint32_t progressDura
     doc["progressDuration"] = progressDuration;
     doc["igniterDuration"] = igniterDuration;
     
-    String json;
-    serializeJson(doc, json);
-    ws.textAll(json);
+    sendJsonToAll(doc);
 }
 
 void WebSocketHandler::broadcastShowProgress(uint8_t currentStep, uint8_t totalSteps, uint8_t currentZone) {
@@ -716,9 +720,7 @@ void WebSocketHandler::broadcastShowProgress(uint8_t currentStep, uint8_t totalS
     doc["total"] = totalSteps;
     doc["zone"] = currentZone;
     
-    String json;
-    serializeJson(doc, json);
-    ws.textAll(json);
+    sendJsonToAll(doc);
 }
 
 void WebSocketHandler::broadcastEStop() {
@@ -726,9 +728,7 @@ void WebSocketHandler::broadcastEStop() {
     
     doc["type"] = "estop_active";
     
-    String json;
-    serializeJson(doc, json);
-    ws.textAll(json);
+    sendJsonToAll(doc);
 }
 
 void WebSocketHandler::broadcastError(const char* code, const char* message) {
@@ -738,9 +738,7 @@ void WebSocketHandler::broadcastError(const char* code, const char* message) {
     doc["code"] = code;
     doc["msg"] = message;
     
-    String json;
-    serializeJson(doc, json);
-    ws.textAll(json);
+    sendJsonToAll(doc);
 }
 
 void WebSocketHandler::sendRoleToClient(uint32_t clientId) {
@@ -863,8 +861,7 @@ void WebSocketHandler::triggerEmergencyStop(const char* reason) {
 // ============================================================================
 
 void WebSocketHandler::handleFireCommand(uint32_t clientId, const char* data) {
-    if (clientId != controllerClientId) {
-        broadcastError("UNAUTHORIZED", "Only controller can fire");
+    if (!requireControllerRole(clientId, "Only controller can fire")) {
         return;
     }
 
@@ -908,8 +905,7 @@ void WebSocketHandler::handleFireCommand(uint32_t clientId, const char* data) {
 }
 
 void WebSocketHandler::handleArmCommand(uint32_t clientId, const char* data) {
-    if (clientId != controllerClientId) {
-        broadcastError("UNAUTHORIZED", "Only controller can arm");
+    if (!requireControllerRole(clientId, "Only controller can arm")) {
         return;
     }
     
@@ -938,8 +934,7 @@ void WebSocketHandler::handleArmCommand(uint32_t clientId, const char* data) {
 }
 
 void WebSocketHandler::handleFireGroupCommand(uint32_t clientId, const char* data) {
-    if (clientId != controllerClientId) {
-        broadcastError("UNAUTHORIZED", "Only controller can fire");
+    if (!requireControllerRole(clientId, "Only controller can fire")) {
         return;
     }
 
@@ -998,8 +993,7 @@ void WebSocketHandler::handleFireGroupCommand(uint32_t clientId, const char* dat
 }
 
 void WebSocketHandler::handleAuxCommand(uint32_t clientId, const char* data) {
-    if (clientId != controllerClientId) {
-        broadcastError("UNAUTHORIZED", "Only controller can toggle auxiliary relays");
+    if (!requireControllerRole(clientId, "Only controller can toggle auxiliary relays")) {
         return;
     }
 
@@ -1017,16 +1011,14 @@ void WebSocketHandler::handleAuxCommand(uint32_t clientId, const char* data) {
 
 void WebSocketHandler::handleEStopCommand(uint32_t clientId) {
     // E-STOP restricted to controller role only (safety critical operation)
-    if (clientId != controllerClientId) {
-        broadcastError("UNAUTHORIZED", "Only controller can trigger E-Stop");
+    if (!requireControllerRole(clientId, "Only controller can trigger E-Stop")) {
         return;
     }
     triggerEmergencyStop("E-Stop button");
 }
 
 void WebSocketHandler::handleEStopReset(uint32_t clientId) {
-    if (clientId != controllerClientId) {
-        broadcastError("UNAUTHORIZED", "Only controller can reset E-Stop");
+    if (!requireControllerRole(clientId, "Only controller can reset E-Stop")) {
         return;
     }
 
@@ -1054,8 +1046,7 @@ void WebSocketHandler::handleEStopReset(uint32_t clientId) {
 }
 
 void WebSocketHandler::handleAutoStartCommand(uint32_t clientId, const char* data) {
-    if (clientId != controllerClientId) {
-        broadcastError("UNAUTHORIZED", "Only controller can start auto show");
+    if (!requireControllerRole(clientId, "Only controller can start auto show")) {
         return;
     }
     
@@ -1088,8 +1079,7 @@ void WebSocketHandler::handleAutoStartCommand(uint32_t clientId, const char* dat
 }
 
 void WebSocketHandler::handleAutoStopCommand(uint32_t clientId) {
-    if (clientId != controllerClientId) {
-        broadcastError("UNAUTHORIZED", "Only controller can stop auto show");
+    if (!requireControllerRole(clientId, "Only controller can stop auto show")) {
         return;
     }
 
