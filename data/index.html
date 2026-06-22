@@ -743,7 +743,8 @@
                 bullets: [
                     'Group None means the zone fires as a single.',
                     'Zones sharing the same group number run together from Show Mode.',
-                    'Order controls auto-show sequence placement.',
+                    'Sort arrows control auto-show sequence placement for zones and groups.',
+                    'Grouped zones are sorted from the group card and do not have individual sort arrows.',
                     'Zone time is used for auto-show pacing and progress timing.'
                 ]
             },
@@ -1458,10 +1459,16 @@
         function updateShowState(msg) {
             appState.showRunning = Boolean(msg.running);
             appState.showState = Number(msg.state ?? appState.showState);
-            appState.showStep = Number(msg.step ?? appState.showStep);
+            appState.showStep = Math.max(0, Number(msg.step ?? appState.showStep));
             appState.showTotal = Number(msg.total ?? appState.showTotal);
+
+            if (appState.showRunning && appState.showTotal > 0) {
+                appState.showStep = Math.max(1, Math.min(appState.showStep, appState.showTotal));
+            }
+
             renderShowStatePanel();
             renderStatusOverview();
+            syncShowMode();
         }
 
         function handleShowProgress(msg) {
@@ -1474,12 +1481,6 @@
                 document.getElementById('testModal').style.display = 'flex';
                 document.getElementById('testProgress').textContent = `Zone ${zone + 1} of ${total}`;
                 document.getElementById('testProgressBar').value = progress;
-            }
-
-            if (appState.showRunning && total > 0) {
-                appState.showStep = current;
-                appState.showTotal = total;
-                renderShowStatePanel();
             }
 
             if (total === 0 && appState.relayTestRunning) {
@@ -1716,7 +1717,8 @@
             const statusShowState = document.getElementById('statusShowState');
             if (statusShowState) {
                 if (appState.showRunning && appState.showTotal > 0) {
-                    statusShowState.textContent = `Running (${appState.showStep}/${appState.showTotal})`;
+                    const safeStep = Math.max(1, Math.min(Number(appState.showStep || 1), Number(appState.showTotal)));
+                    statusShowState.textContent = `Running (${safeStep}/${appState.showTotal})`;
                 } else if (appState.showRunning) {
                     statusShowState.textContent = 'Running';
                 } else {
@@ -1754,9 +1756,12 @@
                 startBtn.style.display = 'none';
                 stopBtn.style.display = 'inline-flex';
                 progressDiv.style.display = 'block';
-                document.getElementById('showCurrentStep').textContent = `${appState.showStep}`;
+                const safeStep = appState.showTotal > 0
+                    ? Math.max(1, Math.min(Number(appState.showStep || 1), Number(appState.showTotal)))
+                    : 0;
+                document.getElementById('showCurrentStep').textContent = `${safeStep}`;
                 document.getElementById('showTotalSteps').textContent = `${appState.showTotal}`;
-                progressBar.value = appState.showTotal > 0 ? Math.round((appState.showStep / appState.showTotal) * 100) : 0;
+                progressBar.value = appState.showTotal > 0 ? Math.round((safeStep / appState.showTotal) * 100) : 0;
             } else {
                 startBtn.style.display = 'inline-flex';
                 stopBtn.style.display = 'none';
@@ -2002,121 +2007,224 @@
             return changed;
         }
 
-        function renderBuilderZones() {
-            const groupOptions = ['<option value="0">None</option>']
+        function renderBuilderGroupOptions(selectedGroup) {
+            const currentGroup = Number(selectedGroup || 0);
+            return ['<option value="0"' + (currentGroup === 0 ? ' selected' : '') + '>None</option>']
                 .concat(Array.from({ length: MAX_GROUPS - 1 }, (_, idx) => {
                     const groupId = idx + 1;
-                    return `<option value="${groupId}">Group ${groupId}</option>`;
+                    const selected = currentGroup === groupId ? ' selected' : '';
+                    return `<option value="${groupId}"${selected}>Group ${groupId}</option>`;
                 }))
                 .join('');
+        }
 
-            const zonesList = document.getElementById('zonesList');
-            zonesList.innerHTML = appState.zones
+        function buildBuilderTimelineItems(zones = appState.zones) {
+            const sortedZones = zones
                 .slice()
-                .sort((left, right) => left.order - right.order || left.id - right.id)
-                .map((zone) => `
-                    <div class="zone-item ${zone.enabled ? 'zone-enabled' : 'zone-disabled'}" data-zone-id="${zone.id}">
-                        <div class="zone-main">
-                            <div class="zone-title-row">
-                                <div class="zone-title">Zone ${zone.id + 1}</div>
-                                <span class="zone-state-chip ${zone.enabled ? 'zone-enabled' : 'zone-disabled'}">${zone.enabled ? 'Enabled' : 'Disabled'}</span>
+                .sort((left, right) => left.order - right.order || left.id - right.id);
+            const groupedById = new Map();
+            zones.forEach((zone) => {
+                const groupId = Number(zone.group || 0);
+                if (groupId <= 0) {
+                    return;
+                }
+                if (!groupedById.has(groupId)) {
+                    groupedById.set(groupId, []);
+                }
+                groupedById.get(groupId).push(zone);
+            });
+
+            const seenGroups = new Set();
+            const timelineItems = [];
+
+            sortedZones.forEach((zone) => {
+                const groupId = Number(zone.group || 0);
+                if (groupId > 0) {
+                    if (seenGroups.has(groupId)) {
+                        return;
+                    }
+                    const memberZones = (groupedById.get(groupId) || [])
+                        .slice()
+                        .sort((left, right) => left.id - right.id);
+                    timelineItems.push({
+                        type: 'group',
+                        groupId,
+                        zones: memberZones
+                    });
+                    seenGroups.add(groupId);
+                    return;
+                }
+
+                timelineItems.push({
+                    type: 'zone',
+                    zoneId: zone.id,
+                    zones: [zone]
+                });
+            });
+
+            return timelineItems;
+        }
+
+        function normalizeBuilderOrdersFromTimeline(timelineItems) {
+            const zoneOrderMap = new Map();
+            let nextOrder = 0;
+
+            timelineItems.forEach((item) => {
+                const zonesInItem = item.type === 'group'
+                    ? item.zones.slice().sort((left, right) => left.id - right.id)
+                    : item.zones;
+
+                zonesInItem.forEach((zone) => {
+                    zoneOrderMap.set(zone.id, nextOrder);
+                    nextOrder += 1;
+                });
+            });
+
+            appState.zones = appState.zones.map((zone) => ({
+                ...zone,
+                order: zoneOrderMap.has(zone.id) ? zoneOrderMap.get(zone.id) : zone.order
+            }));
+        }
+
+        function renderBuilderZoneEditor(zone, options = {}) {
+            const nested = Boolean(options.nested);
+            const showSortControls = Boolean(options.showSortControls);
+
+            return `
+                <div class="zone-item ${zone.enabled ? 'zone-enabled' : 'zone-disabled'}${nested ? ' builder-zone-nested' : ''}" data-zone-id="${zone.id}">
+                    <div class="zone-main">
+                        <div class="zone-title-row">
+                            <div class="zone-title">Zone ${zone.id + 1}</div>
+                            <span class="zone-state-chip ${zone.enabled ? 'zone-enabled' : 'zone-disabled'}">${zone.enabled ? 'Enabled' : 'Disabled'}</span>
+                        </div>
+                        <div class="field-stack">
+                            <label>Description</label>
+                            <input type="text" data-field="description" value="${escapeHtml(zone.description)}" placeholder="Cake finale, comet lift, etc.">
+                        </div>
+                        <div class="zone-meta">
+                            <div class="field-stack">
+                                <label>Time (sec)</label>
+                                <input type="number" min="0" step="0.1" data-field="time" value="${escapeHtml(zone.time)}">
                             </div>
                             <div class="field-stack">
-                                <label>Description</label>
-                                <input type="text" data-field="description" value="${escapeHtml(zone.description)}" placeholder="Cake finale, comet lift, etc.">
+                                <label>Group</label>
+                                <select data-field="group">${renderBuilderGroupOptions(zone.group)}</select>
                             </div>
-                            <div class="zone-meta">
-                                <div class="field-stack">
-                                    <label>Time (sec)</label>
-                                    <input type="number" min="0" step="0.1" data-field="time" value="${escapeHtml(zone.time)}">
-                                </div>
-                                <div class="field-stack">
-                                    <label>Group</label>
-                                    <select data-field="group">${groupOptions.replace(`value="${zone.group}"`, `value="${zone.group}" selected`)}</select>
-                                </div>
-                                <div class="field-stack">
-                                    <label>Order</label>
-                                    <input type="number" min="0" data-field="order" value="${escapeHtml(zone.order)}">
-                                </div>
-                                <div class="field-stack checkbox-stack">
-                                    <label><input type="checkbox" data-field="enabled" ${zone.enabled ? 'checked' : ''}> Enabled</label>
-                                </div>
+                            <div class="field-stack checkbox-stack">
+                                <label><input type="checkbox" data-field="enabled" ${zone.enabled ? 'checked' : ''}> Enabled</label>
                             </div>
-                        </div>
-                        <div class="zone-controls">
-                            <button class="btn btn-secondary" data-action="zone-up">↑</button>
-                            <button class="btn btn-secondary" data-action="zone-down">↓</button>
                         </div>
                     </div>
-                `)
+                    ${showSortControls ? `
+                        <div class="zone-controls">
+                            <button class="btn btn-secondary sort-button" type="button" data-action="zone-up" aria-label="Move zone up" title="Move zone up">
+                                <img src="up-arrow.svg" alt="" aria-hidden="true">
+                            </button>
+                            <button class="btn btn-secondary sort-button" type="button" data-action="zone-down" aria-label="Move zone down" title="Move zone down">
+                                <img src="down-arrow.svg" alt="" aria-hidden="true">
+                            </button>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }
+
+        function renderBuilderZones() {
+            const timelineItems = buildBuilderTimelineItems();
+            const zonesList = document.getElementById('zonesList');
+
+            zonesList.innerHTML = timelineItems
+                .map((item) => {
+                    if (item.type === 'group') {
+                        const zones = item.zones.slice().sort((left, right) => left.id - right.id);
+                        const enabledCount = zones.filter((zone) => zone.enabled).length;
+                        const groupStateClass = enabledCount > 0 ? 'builder-group-has-enabled' : 'builder-group-all-disabled';
+                        const memberCards = zones
+                            .map((zone) => renderBuilderZoneEditor(zone, { nested: true, showSortControls: false }))
+                            .join('');
+
+                        return `
+                            <div class="builder-group-item ${groupStateClass}" data-group-id="${item.groupId}">
+                                <div class="builder-group-header">
+                                    <div class="builder-group-title-wrap">
+                                        <div class="zone-title">Group ${item.groupId}</div>
+                                        <div class="muted">${zones.length} zones · ${enabledCount} enabled</div>
+                                    </div>
+                                    <div class="zone-controls">
+                                        <button class="btn btn-secondary sort-button" type="button" data-action="group-up" aria-label="Move group ${item.groupId} up" title="Move group up">
+                                            <img src="up-arrow.svg" alt="" aria-hidden="true">
+                                        </button>
+                                        <button class="btn btn-secondary sort-button" type="button" data-action="group-down" aria-label="Move group ${item.groupId} down" title="Move group down">
+                                            <img src="down-arrow.svg" alt="" aria-hidden="true">
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="builder-group-zones">${memberCards}</div>
+                            </div>
+                        `;
+                    }
+
+                    return renderBuilderZoneEditor(item.zones[0], { nested: false, showSortControls: true });
+                })
                 .join('');
         }
 
         function renderShowZones() {
             const now = Date.now();
             const showZoneGrid = document.getElementById('showZoneGrid');
-            const sortedZones = appState.zones
-                .slice()
-                .sort((left, right) => left.order - right.order || left.id - right.id);
+            const timelineItems = buildBuilderTimelineItems(appState.zones);
 
-            const singles = [];
-            const grouped = new Map();
-            sortedZones.forEach((zone) => {
-                if (zone.group > 0) {
-                    if (!grouped.has(zone.group)) {
-                        grouped.set(zone.group, []);
+            showZoneGrid.innerHTML = timelineItems.map((item) => {
+                if (item.type === 'zone') {
+                    const zone = item.zones[0];
+                    if (!zone.enabled) {
+                        return '';
                     }
-                    grouped.get(zone.group).push(zone);
-                } else if (zone.enabled) {
-                    singles.push(zone);
-                }
-            });
 
-            const singleCards = singles.map((zone) => {
-                let continuityClass = CONTINUITY_CLASSES[zone.continuity] || 'unknown';
-                const continuityLabel = CONTINUITY_LABELS[zone.continuity] || 'Unknown';
-                const readyPct = readyPercent(zone.id, now);
-                const firingPct = firingPercent(zone.id, now);
-                const igniterActive = (firingStateByZone.get(zone.id) || 0) > now;
-                const canControl = appState.role === 'controller' && appState.masterArmed && !appState.estopActive;
-                const isReady = readyPct > 0;
-                const isRunning = firingPct > 0;
-                if (igniterActive) {
-                    continuityClass = 'firing';
-                }
-                const buttonLabel = !appState.masterArmed
-                    ? 'Arm Required'
-                    : appState.estopActive
-                        ? 'E-Stop Active'
-                        : isRunning
-                            ? '<span class="icon-fire">🔥</span> Running'
-                            : isReady
-                                ? '<span class="icon-fire">🔥</span> Fire'
-                                : '<span class="icon-lock">🔒</span> Ready';
-                const buttonClass = isRunning ? 'running' : isReady ? 'fire' : 'ready';
+                    let continuityClass = CONTINUITY_CLASSES[zone.continuity] || 'unknown';
+                    const continuityLabel = CONTINUITY_LABELS[zone.continuity] || 'Unknown';
+                    const readyPct = readyPercent(zone.id, now);
+                    const firingPct = firingPercent(zone.id, now);
+                    const igniterActive = (firingStateByZone.get(zone.id) || 0) > now;
+                    const canControl = appState.role === 'controller' && appState.masterArmed && !appState.estopActive;
+                    const isReady = readyPct > 0;
+                    const isRunning = firingPct > 0;
+                    if (igniterActive) {
+                        continuityClass = 'firing';
+                    }
+                    const buttonLabel = !appState.masterArmed
+                        ? 'Arm Required'
+                        : appState.estopActive
+                            ? 'E-Stop Active'
+                            : isRunning
+                                ? '<span class="icon-fire">🔥</span> Running'
+                                : isReady
+                                    ? '<span class="icon-fire">🔥</span> Fire'
+                                    : '<span class="icon-lock">🔒</span> Ready';
+                    const buttonClass = isRunning ? 'running' : isReady ? 'fire' : 'ready';
 
-                return `
-                    <div class="zone-card" data-show-zone-id="${zone.id}">
-                        <div class="zone-card-header">
-                            <div>
-                                <div class="zone-number">Zone ${zone.id + 1}</div>
-                                <div class="zone-desc">${escapeHtml(zone.description || 'No description')}</div>
+                    return `
+                        <div class="zone-card" data-show-zone-id="${zone.id}">
+                            <div class="zone-card-header">
+                                <div>
+                                    <div class="zone-number">Zone ${zone.id + 1}</div>
+                                    <div class="zone-desc">${escapeHtml(zone.description || 'No description')}</div>
+                                </div>
+                                <div class="continuity-dot ${continuityClass}" title="${continuityLabel}"></div>
                             </div>
-                            <div class="continuity-dot ${continuityClass}" title="${continuityLabel}"></div>
+                            <div class="muted">Order ${zone.order} · ${zone.time.toFixed(1)}s</div>
+                            <button class="zone-fire-button ${buttonClass}" data-action="fire-zone" data-zone-id="${zone.id}" ${canControl ? '' : 'disabled'}>${buttonLabel}</button>
+                            <div class="zone-progress-wrap">
+                                <div class="zone-progress ready-progress" style="width:${readyPct.toFixed(2)}%;"></div>
+                                <div class="zone-progress firing-progress" style="width:${firingPct.toFixed(2)}%;"></div>
+                            </div>
                         </div>
-                        <div class="muted">Order ${zone.order} · ${zone.time.toFixed(1)}s</div>
-                        <button class="zone-fire-button ${buttonClass}" data-action="fire-zone" data-zone-id="${zone.id}" ${canControl ? '' : 'disabled'}>${buttonLabel}</button>
-                        <div class="zone-progress-wrap">
-                            <div class="zone-progress ready-progress" style="width:${readyPct.toFixed(2)}%;"></div>
-                            <div class="zone-progress firing-progress" style="width:${firingPct.toFixed(2)}%;"></div>
-                        </div>
-                    </div>
-                `;
-            });
+                    `;
+                }
 
-            const groupCards = Array.from(grouped.entries())
-                .sort((left, right) => left[0] - right[0])
-                .map(([groupId, zones]) => {
+                if (item.type === 'group') {
+                    const groupId = item.groupId;
+                    const zones = item.zones;
                     const enabledZones = zones.filter((zone) => zone.enabled);
                     if (enabledZones.length === 0) {
                         return '';
@@ -2203,12 +2311,20 @@
                             </div>
                         </div>
                     `;
-                });
+                }
 
-            showZoneGrid.innerHTML = groupCards.concat(singleCards).join('');
+                return '';
+            }).join('');
         }
 
         function syncShowMode() {
+            if (appState.showRunning) {
+                const autoRadio = document.querySelector('input[name="showMode"][value="auto"]');
+                if (autoRadio) {
+                    autoRadio.checked = true;
+                }
+            }
+
             const autoPanel = document.getElementById('autoShowPanel');
             const selectedMode = document.querySelector('input[name="showMode"]:checked')?.value || 'manual';
             autoPanel.style.display = selectedMode === 'auto' ? 'block' : 'none';
@@ -2287,7 +2403,7 @@
                         description: item.querySelector('[data-field="description"]').value,
                         time: Number(item.querySelector('[data-field="time"]').value || 0),
                         group: Number(item.querySelector('[data-field="group"]').value || 0),
-                        order: Number(item.querySelector('[data-field="order"]').value || zone.order),
+                        order: zone.order,
                         enabled: item.querySelector('[data-field="enabled"]').checked
                     };
                 });
@@ -2419,28 +2535,29 @@
             syncLayoutOffsets();
         }
 
-        function reorderZone(zoneId, direction) {
+        function reorderBuilderTimelineItem(matchFn, direction) {
             captureBuilderDraftToState();
-            const zoneItems = appState.zones
-                .slice()
-                .sort((left, right) => left.order - right.order || left.id - right.id);
-            const currentIndex = zoneItems.findIndex((item) => item.id === zoneId);
+            const timelineItems = buildBuilderTimelineItems();
+            const currentIndex = timelineItems.findIndex(matchFn);
             const swapIndex = currentIndex + direction;
-            if (currentIndex < 0 || swapIndex < 0 || swapIndex >= zoneItems.length) {
+            if (currentIndex < 0 || swapIndex < 0 || swapIndex >= timelineItems.length) {
                 return;
             }
 
-            const tempOrder = zoneItems[currentIndex].order;
-            zoneItems[currentIndex].order = zoneItems[swapIndex].order;
-            zoneItems[swapIndex].order = tempOrder;
-
-            appState.zones = appState.zones.map((zone) => {
-                const updated = zoneItems.find((item) => item.id === zone.id);
-                return updated ? { ...zone, order: updated.order } : zone;
-            });
+            const [movedItem] = timelineItems.splice(currentIndex, 1);
+            timelineItems.splice(swapIndex, 0, movedItem);
+            normalizeBuilderOrdersFromTimeline(timelineItems);
 
             markBuilderDirty();
             renderBuilderZones();
+        }
+
+        function reorderZone(zoneId, direction) {
+            reorderBuilderTimelineItem((item) => item.type === 'zone' && item.zoneId === zoneId, direction);
+        }
+
+        function reorderGroup(groupId, direction) {
+            reorderBuilderTimelineItem((item) => item.type === 'group' && item.groupId === groupId, direction);
         }
 
         function saveApCredentials() {
@@ -3027,17 +3144,40 @@
             });
 
             document.getElementById('zonesList').addEventListener('click', (event) => {
-                const item = event.target.closest('[data-zone-id]');
-                if (!item) {
+                const actionElement = event.target.closest('[data-action]');
+                if (!actionElement) {
                     return;
                 }
 
-                const action = event.target.dataset.action;
-                const zoneId = Number(item.dataset.zoneId);
+                const action = actionElement.dataset.action;
                 if (action === 'zone-up') {
+                    const item = actionElement.closest('[data-zone-id]');
+                    if (!item) {
+                        return;
+                    }
+                    const zoneId = Number(item.dataset.zoneId);
                     reorderZone(zoneId, -1);
                 } else if (action === 'zone-down') {
+                    const item = actionElement.closest('[data-zone-id]');
+                    if (!item) {
+                        return;
+                    }
+                    const zoneId = Number(item.dataset.zoneId);
                     reorderZone(zoneId, 1);
+                } else if (action === 'group-up') {
+                    const groupItem = actionElement.closest('[data-group-id]');
+                    if (!groupItem) {
+                        return;
+                    }
+                    const groupId = Number(groupItem.dataset.groupId);
+                    reorderGroup(groupId, -1);
+                } else if (action === 'group-down') {
+                    const groupItem = actionElement.closest('[data-group-id]');
+                    if (!groupItem) {
+                        return;
+                    }
+                    const groupId = Number(groupItem.dataset.groupId);
+                    reorderGroup(groupId, 1);
                 }
             });
 

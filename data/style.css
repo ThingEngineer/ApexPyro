@@ -604,6 +604,44 @@ body.help-buttons-hidden .help-trigger {
   padding-bottom: 0.25rem;
 }
 
+.builder-group-item {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.builder-group-item.builder-group-has-enabled {
+  border-left: 4px solid var(--status-safe);
+}
+
+.builder-group-item.builder-group-all-disabled {
+  border-left: 4px solid var(--status-armed);
+}
+
+.builder-group-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.builder-group-title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.builder-group-zones {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-left: 0.8rem;
+}
+
 .zone-item {
   background-color: var(--border-color);
   border: 1px solid var(--border-color);
@@ -621,6 +659,10 @@ body.help-buttons-hidden .help-trigger {
 
 .zone-item.zone-disabled {
   border-left: 4px solid var(--status-armed);
+}
+
+.builder-zone-nested {
+  margin: 0;
 }
 
 .zone-main {
@@ -739,6 +781,37 @@ body.help-buttons-hidden .help-trigger {
 
 .zone-controls button:hover {
   color: var(--accent-secondary);
+}
+
+.sort-button {
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0.35rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sort-button img {
+  width: 1rem;
+  height: 1rem;
+  display: block;
+}
+
+.sort-button:focus-visible {
+  outline: 2px solid var(--accent-secondary);
+  outline-offset: 2px;
+}
+
+@media (max-width: 700px) {
+  .builder-group-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .builder-group-zones {
+    padding-left: 0.4rem;
+  }
 }
 
 .builder-actions {

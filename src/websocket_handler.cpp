@@ -706,8 +706,13 @@ void WebSocketHandler::broadcastShowState() {
     doc["type"] = "show_state";
     doc["state"] = static_cast<uint8_t>(showRunner.getShowState());
     doc["running"] = showRunner.isShowRunning();
-    doc["step"] = showRunner.getCurrentStepIdx();
-    doc["total"] = showRunner.getTotalSteps();
+    const uint8_t totalSteps = showRunner.getTotalSteps();
+    uint8_t currentStep = showRunner.getCurrentStepIdx();
+    if (showRunner.isShowRunning() && totalSteps > 0) {
+        currentStep = static_cast<uint8_t>(currentStep + 1);
+    }
+    doc["step"] = currentStep;
+    doc["total"] = totalSteps;
 
     String json;
     serializeJson(doc, json);
