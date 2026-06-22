@@ -1125,9 +1125,19 @@
             if (key && key.length > 0) {
                 return key;
             }
-            key = window.crypto && typeof window.crypto.randomUUID === 'function'
-                ? window.crypto.randomUUID()
-                : `apx-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
+
+            if (!window.crypto) {
+                throw new Error('Secure browser crypto APIs are unavailable');
+            }
+
+            if (typeof window.crypto.randomUUID === 'function') {
+                key = window.crypto.randomUUID();
+            } else {
+                const bytes = new Uint8Array(16);
+                window.crypto.getRandomValues(bytes);
+                key = Array.from(bytes).map((byte) => byte.toString(16).padStart(2, '0')).join('');
+            }
+
             localStorage.setItem(CLIENT_KEY_STORAGE_KEY, key);
             return key;
         }
@@ -1142,7 +1152,17 @@
                 wsLinkUp = true;
                 lastWsMessageAt = Date.now();
                 renderConnectionIndicator();
-                wsSend({ type: 'client_hello', clientKey: getOrCreateClientKey() });
+                let clientKey;
+                try {
+                    clientKey = getOrCreateClientKey();
+                } catch (error) {
+                    console.error('Unable to establish client identity:', error);
+                    showToast('Browser crypto support is required', 'error');
+                    ws.close();
+                    return;
+                }
+
+                wsSend({ type: 'client_hello', clientKey });
                 wsSend({ type: 'get_state' });
                 wsSend({ type: 'get_role' });
                 if (appState.serialMonitor.running) {

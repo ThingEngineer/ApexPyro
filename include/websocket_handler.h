@@ -55,6 +55,12 @@ private:
         String nonce;
     };
 
+    struct ClientRateLimitState {
+        uint32_t clientId;
+        uint32_t windowStartMs;
+        uint16_t commandCount;
+    };
+
     AsyncWebServer server;
     AsyncWebSocket ws;
     
@@ -75,11 +81,13 @@ private:
     std::vector<ClientPayloadBuffer> payloadBuffers;
     std::vector<ClientCommandState> commandStates;
     std::vector<CommandNonce> recentCommandNonces;
+    std::vector<ClientRateLimitState> commandRateLimits;
     
     // Heartbeat & timeout
     void handleHeartbeatTimeout();
     void sendHeartbeat();
     bool requireControllerRole(uint32_t clientId, const char* actionMessage);
+    bool allowClientCommand(uint32_t clientId);
     void sendJsonToAll(JsonDocument& doc);
     void markStateDirty();
     bool parseJsonPayload(JsonDocument& doc, const char* data, const char* errorMessage);

@@ -10,10 +10,12 @@
 
 namespace {
 const uint32_t FULL_STATE_BROADCAST_MIN_INTERVAL_MS = 300;
-const uint32_t ROLE_LOCK_RECLAIM_TIMEOUT_MS = 15000;
+const uint32_t ROLE_LOCK_RECLAIM_TIMEOUT_MS = 300000;
 const uint32_t SERIAL_MONITOR_FLUSH_INTERVAL_MS = 150;
 const size_t SERIAL_MONITOR_MAX_BATCH_LINES = 16;
 const size_t MAX_TRACKED_COMMAND_NONCES = 64;
+const uint32_t COMMAND_RATE_LIMIT_WINDOW_MS = 1000;
+const uint16_t COMMAND_RATE_LIMIT_MAX_PER_WINDOW = 25;
 }
 
 WebSocketHandler wsHandler;
@@ -380,6 +382,17 @@ void WebSocketHandler::onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* c
 
         const char* msgType = doc["type"] | "";
 
+        bool exemptFromRateLimit =
+            strcmp(msgType, "pong") == 0 ||
+            strcmp(msgType, "get_role") == 0 ||
+            strcmp(msgType, "get_state") == 0 ||
+            strcmp(msgType, "client_hello") == 0;
+        if (!exemptFromRateLimit && !wsHandler.allowClientCommand(clientId)) {
+            wsHandler.broadcastError("RATE_LIMIT", "Command rate limit exceeded");
+            wsHandler.clearPayloadBuffer(clientId);
+            return;
+        }
+
         if (clientId == wsHandler.controllerClientId) {
             wsHandler.lastControllerMessageMs = millis();
         }
@@ -461,6 +474,31 @@ bool WebSocketHandler::requireControllerRole(uint32_t clientId, const char* acti
     return false;
 }
 
+bool WebSocketHandler::allowClientCommand(uint32_t clientId) {
+    uint32_t now = millis();
+    for (auto& state : commandRateLimits) {
+        if (state.clientId != clientId) {
+            continue;
+        }
+
+        if (now - state.windowStartMs >= COMMAND_RATE_LIMIT_WINDOW_MS) {
+            state.windowStartMs = now;
+            state.commandCount = 1;
+            return true;
+        }
+
+        if (state.commandCount >= COMMAND_RATE_LIMIT_MAX_PER_WINDOW) {
+            return false;
+        }
+
+        state.commandCount++;
+        return true;
+    }
+
+    commandRateLimits.push_back({clientId, now, 1});
+    return true;
+}
+
 void WebSocketHandler::sendJsonToAll(JsonDocument& doc) {
     String json;
     serializeJson(doc, json);
@@ -497,6 +535,14 @@ void WebSocketHandler::removeClient(uint32_t clientId) {
     for (auto it = recentCommandNonces.begin(); it != recentCommandNonces.end();) {
         if (it->clientId == clientId) {
             it = recentCommandNonces.erase(it);
+            continue;
+        }
+        ++it;
+    }
+
+    for (auto it = commandRateLimits.begin(); it != commandRateLimits.end();) {
+        if (it->clientId == clientId) {
+            it = commandRateLimits.erase(it);
             continue;
         }
         ++it;
