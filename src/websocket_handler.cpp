@@ -452,6 +452,15 @@ void WebSocketHandler::markStateDirty() {
     fullStateDirty = true;
 }
 
+bool WebSocketHandler::parseJsonPayload(JsonDocument& doc, const char* data, const char* errorMessage) {
+    DeserializationError error = deserializeJson(doc, data);
+    if (error) {
+        broadcastError("INVALID_JSON", errorMessage);
+        return false;
+    }
+    return true;
+}
+
 void WebSocketHandler::removeClient(uint32_t clientId) {
     removeViewer(clientId);
     clearPayloadBuffer(clientId);
@@ -865,7 +874,9 @@ void WebSocketHandler::handleFireCommand(uint32_t clientId, const char* data) {
     }
     
     StaticJsonDocument<256> doc;
-    deserializeJson(doc, data);
+    if (!parseJsonPayload(doc, data, "Fire payload is not valid JSON")) {
+        return;
+    }
     
     uint8_t zone = doc["zone"] | 0;
     uint64_t ts = doc["ts"] | 0;
@@ -903,7 +914,9 @@ void WebSocketHandler::handleArmCommand(uint32_t clientId, const char* data) {
     }
     
     StaticJsonDocument<256> doc;
-    deserializeJson(doc, data);
+    if (!parseJsonPayload(doc, data, "Arm payload is not valid JSON")) {
+        return;
+    }
     
     bool state = doc["state"] | false;
     uint64_t ts = doc["ts"] | 0;
@@ -936,7 +949,9 @@ void WebSocketHandler::handleFireGroupCommand(uint32_t clientId, const char* dat
     }
 
     StaticJsonDocument<256> doc;
-    deserializeJson(doc, data);
+    if (!parseJsonPayload(doc, data, "Group fire payload is not valid JSON")) {
+        return;
+    }
 
     uint8_t groupId = doc["group"] | 0;
     uint64_t ts = doc["ts"] | 0;
@@ -989,7 +1004,9 @@ void WebSocketHandler::handleAuxCommand(uint32_t clientId, const char* data) {
     }
 
     StaticJsonDocument<256> doc;
-    deserializeJson(doc, data);
+    if (!parseJsonPayload(doc, data, "Aux relay payload is not valid JSON")) {
+        return;
+    }
     
     uint8_t relay = doc["relay"] | 0;
     bool state = doc["state"] | false;
@@ -1048,7 +1065,9 @@ void WebSocketHandler::handleAutoStartCommand(uint32_t clientId, const char* dat
     }
 
     StaticJsonDocument<256> doc;
-    deserializeJson(doc, data);
+    if (!parseJsonPayload(doc, data, "Auto show payload is not valid JSON")) {
+        return;
+    }
 
     uint8_t zone = doc["zone"] | 0;
     uint64_t ts = doc["ts"] | 0;
@@ -1086,7 +1105,9 @@ void WebSocketHandler::handleZoneConfigCommand(uint32_t clientId, const char* da
     }
 
     DynamicJsonDocument doc(2048);
-    deserializeJson(doc, data);
+    if (!parseJsonPayload(doc, data, "Zone update payload is not valid JSON")) {
+        return;
+    }
 
     uint8_t zone = doc["zone"] | 255;
     if (zone >= MAX_ZONES) {
@@ -1116,7 +1137,9 @@ void WebSocketHandler::handleSettingCommand(uint32_t clientId, const char* data)
 
     // Save generic settings
     StaticJsonDocument<512> doc;
-    deserializeJson(doc, data);
+    if (!parseJsonPayload(doc, data, "Setting payload is not valid JSON")) {
+        return;
+    }
     
     const char* key = doc["key"] | "";
     JsonVariant value = doc["value"];
@@ -1272,7 +1295,9 @@ void WebSocketHandler::handleAuxNameCommand(uint32_t clientId, const char* data)
     }
 
     StaticJsonDocument<256> doc;
-    deserializeJson(doc, data);
+    if (!parseJsonPayload(doc, data, "Aux name payload is not valid JSON")) {
+        return;
+    }
     
     uint8_t relay = doc["relay"] | 0;
     const char* name = doc["name"] | "";
@@ -1288,7 +1313,9 @@ void WebSocketHandler::handleSerialMonitorCommand(uint32_t clientId, const char*
     }
 
     StaticJsonDocument<128> doc;
-    deserializeJson(doc, data);
+    if (!parseJsonPayload(doc, data, "Serial monitor payload is not valid JSON")) {
+        return;
+    }
     const char* action = doc["action"] | "start";
 
     if (strcmp(action, "stop") == 0) {
@@ -1343,7 +1370,9 @@ void WebSocketHandler::handleApConfigCommand(uint32_t clientId, const char* data
     }
 
     StaticJsonDocument<256> doc;
-    deserializeJson(doc, data);
+    if (!parseJsonPayload(doc, data, "AP settings payload is not valid JSON")) {
+        return;
+    }
 
     const char* ssid = doc["ssid"] | DEFAULT_AP_SSID;
     const char* pass = doc["pass"] | DEFAULT_AP_PASSWORD;
@@ -1370,7 +1399,9 @@ void WebSocketHandler::handleWiFiConnectCommand(uint32_t clientId, const char* d
     }
 
     StaticJsonDocument<256> doc;
-    deserializeJson(doc, data);
+    if (!parseJsonPayload(doc, data, "WiFi connect payload is not valid JSON")) {
+        return;
+    }
     
     const char* ssid = doc["ssid"] | "";
     const char* pass = doc["pass"] | "";
@@ -1393,7 +1424,9 @@ void WebSocketHandler::handleRelayTestCommand(uint32_t clientId, const char* dat
     }
 
     StaticJsonDocument<128> doc;
-    deserializeJson(doc, data);
+    if (!parseJsonPayload(doc, data, "Relay test payload is not valid JSON")) {
+        return;
+    }
     const char* action = doc["action"] | "start";
 
     if (strcmp(action, "stop") == 0) {
@@ -1434,7 +1467,9 @@ void WebSocketHandler::handleRelayTestCommand(uint32_t clientId, const char* dat
 
 void WebSocketHandler::handleClientHello(uint32_t clientId, const char* data) {
     StaticJsonDocument<256> doc;
-    deserializeJson(doc, data);
+    if (!parseJsonPayload(doc, data, "Client hello payload is not valid JSON")) {
+        return;
+    }
 
     String key = doc["clientKey"] | "";
     key.trim();
@@ -1498,7 +1533,9 @@ void WebSocketHandler::handleRoleLockCommand(uint32_t clientId, const char* data
     }
 
     StaticJsonDocument<128> doc;
-    deserializeJson(doc, data);
+    if (!parseJsonPayload(doc, data, "Role lock payload is not valid JSON")) {
+        return;
+    }
     bool locked = doc["locked"] | true;
 
     controllerRoleLocked = locked;

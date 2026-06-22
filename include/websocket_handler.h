@@ -80,6 +80,7 @@ private:
     void handleHeartbeatTimeout();
     void sendHeartbeat();
     void markStateDirty();
+    bool parseJsonPayload(JsonDocument& doc, const char* data, const char* errorMessage);
     bool validateCommandSignature(uint32_t clientId, const char* command, uint8_t value, uint64_t timestampMs, const char* nonce, const char* signature);
     
     // Message handlers
