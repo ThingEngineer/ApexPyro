@@ -1120,6 +1120,23 @@
             return Array.from(bytes).map((byte) => byte.toString(16).padStart(2, '0')).join('');
         }
 
+        function calcChecksum(cmd, value, timestamp) {
+            const data = `${cmd}:${value}:${timestamp}`;
+            let crc = 0xffffffff;
+            for (let i = 0; i < data.length; i++) {
+                const byte = data.charCodeAt(i) & 0xff;
+                for (let bitIndex = 0; bitIndex < 8; bitIndex++) {
+                    const bit = (byte >> (7 - bitIndex)) & 1;
+                    const topBit = (crc >>> 31) & 1;
+                    crc = (crc << 1) >>> 0;
+                    if ((topBit ^ bit) !== 0) {
+                        crc = (crc ^ 0x04c11db7) >>> 0;
+                    }
+                }
+            }
+            return crc.toString(16).padStart(8, '0');
+        }
+
         function getOrCreateClientKey() {
             let key = localStorage.getItem(CLIENT_KEY_STORAGE_KEY);
             if (key && key.length > 0) {
@@ -1211,13 +1228,16 @@
 
             const payload = { ...obj };
             if (payload.type === 'fire' || payload.type === 'fire_group' || payload.type === 'arm' || payload.type === 'auto_start') {
-                if (!window.crypto || !window.crypto.subtle) {
-                    showToast('Browser crypto support is required for command signing', 'error');
-                    return false;
-                }
-
                 const timestampMs = Date.now();
                 const signedValue = payload.zone ?? payload.group ?? (payload.state ? 1 : 0);
+                if (!window.crypto || !window.crypto.subtle) {
+                    const timestamp = Math.floor(timestampMs / 1000);
+                    payload.ts = timestamp;
+                    payload.cs = calcChecksum(payload.type.toUpperCase(), signedValue, timestamp);
+                    ws.send(JSON.stringify(payload));
+                    return true;
+                }
+
                 const nonce = (window.crypto && typeof window.crypto.randomUUID === 'function')
                     ? window.crypto.randomUUID()
                     : `${timestampMs}-${Math.floor(Math.random() * 1000000)}`;

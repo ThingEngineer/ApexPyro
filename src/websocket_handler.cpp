@@ -141,6 +141,35 @@ String WebSocketHandler::calculateHmacSha256(const String& key, const String& da
     return String(hex);
 }
 
+uint32_t WebSocketHandler::calculateCrc32(const String& data) {
+    uint32_t crc = 0xffffffff;
+    for (size_t i = 0; i < data.length(); i++) {
+        uint8_t byte = data[i];
+        for (int bitIndex = 0; bitIndex < 8; bitIndex++) {
+            uint32_t bit = (byte >> (7 - bitIndex)) & 1U;
+            uint32_t topBit = (crc >> 31) & 1U;
+            crc = crc << 1;
+            if ((topBit ^ bit) != 0U) {
+                crc = crc ^ 0x04c11db7;
+            }
+        }
+    }
+    return crc;
+}
+
+bool WebSocketHandler::validateLegacyChecksum(const char* command, uint8_t value, uint32_t timestamp, const char* checksum) {
+    if (command == nullptr || checksum == nullptr) {
+        return false;
+    }
+
+    String data = String(command) + ":" + String(value) + ":" + String(timestamp);
+    uint32_t computed = calculateCrc32(data);
+
+    char hexStr[9];
+    sprintf(hexStr, "%08x", computed);
+    return strcmp(hexStr, checksum) == 0;
+}
+
 bool WebSocketHandler::validateCommandSignature(uint32_t clientId, const char* command, uint8_t value, uint64_t timestampMs, const char* nonce, const char* signature) {
     if (clientId == 0 || command == nullptr || nonce == nullptr || signature == nullptr) {
         return false;
@@ -925,9 +954,13 @@ void WebSocketHandler::handleFireCommand(uint32_t clientId, const char* data) {
     uint64_t ts = doc["ts"] | 0;
     const char* nonce = doc["nonce"] | "";
     const char* sig = doc["sig"] | "";
+    const char* cs = doc["cs"] | "";
 
-    if (!validateCommandSignature(clientId, "FIRE", zone, ts, nonce, sig)) {
-        broadcastError("BAD_SIGNATURE", "Command signature validation failed");
+    bool validCommandAuth = (strlen(sig) > 0)
+        ? validateCommandSignature(clientId, "FIRE", zone, ts, nonce, sig)
+        : validateLegacyChecksum("FIRE", zone, static_cast<uint32_t>(ts), cs);
+    if (!validCommandAuth) {
+        broadcastError("BAD_SIGNATURE", "Command authentication failed");
         return;
     }
 
@@ -964,9 +997,13 @@ void WebSocketHandler::handleArmCommand(uint32_t clientId, const char* data) {
     uint64_t ts = doc["ts"] | 0;
     const char* nonce = doc["nonce"] | "";
     const char* sig = doc["sig"] | "";
+    const char* cs = doc["cs"] | "";
 
-    if (!validateCommandSignature(clientId, "ARM", state ? 1 : 0, ts, nonce, sig)) {
-        broadcastError("BAD_SIGNATURE", "Command signature validation failed");
+    bool validCommandAuth = (strlen(sig) > 0)
+        ? validateCommandSignature(clientId, "ARM", state ? 1 : 0, ts, nonce, sig)
+        : validateLegacyChecksum("ARM", state ? 1 : 0, static_cast<uint32_t>(ts), cs);
+    if (!validCommandAuth) {
+        broadcastError("BAD_SIGNATURE", "Command authentication failed");
         return;
     }
 
@@ -998,9 +1035,13 @@ void WebSocketHandler::handleFireGroupCommand(uint32_t clientId, const char* dat
     uint64_t ts = doc["ts"] | 0;
     const char* nonce = doc["nonce"] | "";
     const char* sig = doc["sig"] | "";
+    const char* cs = doc["cs"] | "";
 
-    if (!validateCommandSignature(clientId, "FIRE_GROUP", groupId, ts, nonce, sig)) {
-        broadcastError("BAD_SIGNATURE", "Command signature validation failed");
+    bool validCommandAuth = (strlen(sig) > 0)
+        ? validateCommandSignature(clientId, "FIRE_GROUP", groupId, ts, nonce, sig)
+        : validateLegacyChecksum("FIRE_GROUP", groupId, static_cast<uint32_t>(ts), cs);
+    if (!validCommandAuth) {
+        broadcastError("BAD_SIGNATURE", "Command authentication failed");
         return;
     }
 
@@ -1110,8 +1151,12 @@ void WebSocketHandler::handleAutoStartCommand(uint32_t clientId, const char* dat
     uint64_t ts = doc["ts"] | 0;
     const char* nonce = doc["nonce"] | "";
     const char* sig = doc["sig"] | "";
-    if (!validateCommandSignature(clientId, "AUTO_START", zone, ts, nonce, sig)) {
-        broadcastError("BAD_SIGNATURE", "Command signature validation failed");
+    const char* cs = doc["cs"] | "";
+    bool validCommandAuth = (strlen(sig) > 0)
+        ? validateCommandSignature(clientId, "AUTO_START", zone, ts, nonce, sig)
+        : validateLegacyChecksum("AUTO_START", zone, static_cast<uint32_t>(ts), cs);
+    if (!validCommandAuth) {
+        broadcastError("BAD_SIGNATURE", "Command authentication failed");
         return;
     }
 

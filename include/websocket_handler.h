@@ -92,6 +92,7 @@ private:
     void markStateDirty();
     bool parseJsonPayload(JsonDocument& doc, const char* data, const char* errorMessage);
     bool validateCommandSignature(uint32_t clientId, const char* command, uint8_t value, uint64_t timestampMs, const char* nonce, const char* signature);
+    bool validateLegacyChecksum(const char* command, uint8_t value, uint32_t timestamp, const char* checksum);
     
     // Message handlers
     void handleFireCommand(uint32_t clientId, const char* data);
@@ -148,6 +149,7 @@ private:
     
     // Utility
     String calculateHmacSha256(const String& key, const String& data);
+    uint32_t calculateCrc32(const String& data);
     String formatContinuityArray();
 
     bool relayTestActive;
