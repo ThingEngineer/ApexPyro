@@ -1059,30 +1059,47 @@ body.help-buttons-hidden .help-trigger {
 }
 
 .system-status {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1rem;
+  padding: 1.5rem;
+}
+
+.system-status > .section-title-row {
+  margin-bottom: 0.65rem;
 }
 
 .status-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
 }
 
 .status-item-full {
   display: flex;
-  justify-content: space-between;
-  padding: 0.75rem;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.5rem 0.65rem;
   background-color: var(--bg-base);
   border-radius: 6px;
   border: 1px solid var(--border-color);
+  min-height: 2.2rem;
 }
 
 .status-item-full .label {
   color: var(--text-muted);
   font-weight: 500;
-  margin-right: 0.5rem;
+  margin-right: 0;
+  white-space: nowrap;
+  font-size: 0.82rem;
+}
+
+.status-item-full span:last-child {
+  margin-left: auto;
+  font-weight: 600;
+}
+
+.system-status .wifi-status-icon {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
 }
 
 .radio-group {
@@ -1110,6 +1127,14 @@ body.help-buttons-hidden .help-trigger {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
   gap: 1rem;
+}
+
+.zone-group-help > .section-title-row {
+  margin-bottom: 0.95rem;
+}
+
+.zone-group-help > .zones-grid {
+  width: 100%;
 }
 
 .group-container {
@@ -1860,6 +1885,10 @@ progress::-moz-progress-bar {
 /* ========================================================================== */
 
 @media (max-width: 1024px) {
+  .status-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .zones-grid {
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   }
@@ -1968,6 +1997,28 @@ progress::-moz-progress-bar {
 
   .status-overview-grid {
     grid-template-columns: 1fr;
+  }
+
+  .system-status > .section-title-row {
+    margin-bottom: 0.55rem;
+  }
+
+  .status-grid {
+    grid-template-columns: 1fr;
+    gap: 0.45rem;
+  }
+
+  .status-item-full {
+    min-height: 2rem;
+    padding: 0.45rem 0.6rem;
+  }
+
+  .zone-group-help {
+    padding: 1rem;
+  }
+
+  .zone-group-help > .section-title-row {
+    margin-bottom: 0.75rem;
   }
 
   .zones-grid {
