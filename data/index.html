@@ -199,7 +199,6 @@
                             <img src="help.svg" alt="" aria-hidden="true">
                         </button>
                     </div>
-                    <p class="muted">Engages igniter power relay</p>
                     <div class="arm-status" id="armStatus">DISARMED</div>
                     <label class="switch">
                         <input type="checkbox" id="masterArmToggle">
@@ -279,8 +278,6 @@
                             <img src="help.svg" alt="" aria-hidden="true">
                         </button>
                     </div>
-                    <p class="muted">Groups fire all enabled member zones together. Group run timing follows the longest
-                        zone in that group.</p>
                 </div>
 
                 <!-- Zones Grid -->
@@ -779,6 +776,7 @@
                 title: 'Master Arm',
                 intro: 'Master Arm enables igniter power so firing commands can execute.',
                 bullets: [
+                    'Engages igniter power relay.',
                     'When armed, E-STOP appears in the sticky header for immediate shutdown.',
                     'If E-Stop is active, reset is required before re-arming.',
                     'Disarmed state blocks all firing actions.'
