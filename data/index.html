@@ -137,9 +137,9 @@
                 </div>
                 <div class="builder-footer">
                     <details class="aux-section" id="auxSectionDetails">
-                        <summary><span>Auxiliary Relays</span>
+                        <summary><span>Auxiliary Controls</span>
                             <button class="help-trigger summary-help-trigger" type="button"
-                                data-help-topic="builder-aux-relays" aria-label="Auxiliary relays help">
+                                data-help-topic="builder-aux-controls" aria-label="Auxiliary controls help">
                                 <img src="help.svg" alt="" aria-hidden="true">
                             </button>
                         </summary>
@@ -154,6 +154,10 @@
                         <div class="aux-input">
                             <label>Aux 3 Name:</label>
                             <input type="text" id="aux3Name" placeholder="LEDs">
+                        </div>
+                        <div class="aux-input">
+                            <label>Aux 4 Name:</label>
+                            <input type="text" id="aux4Name" placeholder="Camera">
                         </div>
                     </details>
                     <details class="aux-section" id="showManagementDetails">
@@ -309,6 +313,7 @@
                         <button id="auxToggle0" class="btn btn-secondary" data-relay="0">Aux 1 Off</button>
                         <button id="auxToggle1" class="btn btn-secondary" data-relay="1">Aux 2 Off</button>
                         <button id="auxToggle2" class="btn btn-secondary" data-relay="2">Aux 3 Off</button>
+                        <button id="auxToggle3" class="btn btn-secondary" data-relay="3">Aux 4 Off</button>
                     </div>
                 </div>
             </div>
@@ -669,7 +674,7 @@
     <!-- Embedded CSS (will be in style.css file) -->
     <!-- Embedded JavaScript -->
     <script>
-        const MAX_ZONES = 48;
+        const MAX_ZONES = 128;
         const MAX_GROUPS = 16;
         const READY_WINDOW_MS = 5000;
         const PAGE_PATHS = {
@@ -685,7 +690,7 @@
             contHiGood: { decimals: 4, minFractionDigits: 0, min: 0, max: 5 },
             contLoOpen: { decimals: 1, minFractionDigits: 1, min: 0, max: 5 }
         };
-        const DEFAULT_AUX_NAMES = ['Lights', 'Music', 'LEDs'];
+        const DEFAULT_AUX_NAMES = ['Lights', 'Music', 'LEDs', 'Camera'];
         const DEFAULT_SETTINGS = {
             igniterDurationMs: 2000,
             igniterDurationSec: 2,
@@ -759,13 +764,14 @@
                     'Zone time is used for auto-show pacing and progress timing.'
                 ]
             },
-            'builder-aux-relays': {
-                title: 'Auxiliary Relays',
+            'builder-aux-controls': {
+                title: 'Auxiliary Controls',
                 intro: 'Aux relays control non-ignition outputs like lights or music triggers.',
                 bullets: [
                     'Set names here to keep Show Mode labels meaningful.',
                     'Names are synced to the Auxiliary Controls card in Show Mode.',
-                    'Aux outputs are independent of zone ignition timing.'
+                    'Aux outputs are independent of zone ignition timing.',
+                    'A0-A3 are exposed as Aux 1 through Aux 4.'
                 ]
             },
             'builder-show-management': {
@@ -802,7 +808,8 @@
                 bullets: [
                     'Battery is estimated from voltage and your selected profile curve.',
                     'WiFi includes signal strength and connection context.',
-                    'Detected board count helps verify hardware before firing.'
+                    'Detected board count helps verify firing hardware before firing.',
+                    'Continuity monitoring currently covers zones 1-48; higher zones show as Unknown unless continuity hardware is expanded.'
                 ]
             },
             'show-mode': {
@@ -836,7 +843,7 @@
                 title: 'Auxiliary Controls',
                 intro: 'These buttons toggle non-ignition relays during setup or show operation.',
                 bullets: [
-                    'Names come from Builder > Auxiliary Relays.',
+                    'Names come from Builder > Auxiliary Controls.',
                     'Aux states are shown and synchronized across connected clients.',
                     'Controller role is required to toggle outputs.'
                 ]
@@ -873,7 +880,8 @@
                 intro: 'Detected board count confirms connected relay hardware.',
                 bullets: [
                     'Use this as a quick sanity check before arming.',
-                    'Unexpected counts can indicate wiring or I2C issues.'
+                    'Unexpected counts can indicate wiring or I2C issues.',
+                    'Primary firing bus supports up to 8 PW535 boards (128 zones total capacity).'
                 ]
             },
             'settings-safety': {
@@ -900,7 +908,8 @@
                 intro: 'Battery percent is estimated from voltage using a voltage-to-SoC (State of Charge) lookup curve.',
                 bullets: [
                     'Preset chemistries use tuned point tables for the selected profile.',
-                    'Custom mode lets you define your own voltage,SoC curve points.',
+                    'All presets are based on ~12V nominal battery pack voltage.',
+                    'Custom profiles lets you define your own voltage, SoC curve points.',
                     'Resolved values show the active pack min/max, warning threshold, and sample interval.',
                     'Percent reflects interpolation between curve points, not coulomb counting.'
                 ]
@@ -1375,10 +1384,10 @@
             }
 
             appState.settings = { ...appState.settings, ...(msg.settings || {}) };
-            appState.auxNames = Array.isArray(msg.auxNames) && msg.auxNames.length >= DEFAULT_AUX_NAMES.length
+            appState.auxNames = Array.isArray(msg.auxNames) && msg.auxNames.length >= 1
                 ? msg.auxNames.slice(0, DEFAULT_AUX_NAMES.length)
                 : [...appState.auxNames];
-            appState.auxState = Array.isArray(msg.auxState) && msg.auxState.length >= DEFAULT_AUX_NAMES.length
+            appState.auxState = Array.isArray(msg.auxState) && msg.auxState.length >= 1
                 ? msg.auxState.slice(0, DEFAULT_AUX_NAMES.length).map((value) => Boolean(value))
                 : appState.auxState;
             if (typeof msg.serialMonitorRunning === 'boolean') {
@@ -1491,7 +1500,7 @@
             if (typeof msg.wifiConnecting === 'boolean') {
                 appState.wifiConfig.connecting = msg.wifiConnecting;
             }
-            if (Array.isArray(msg.auxState) && msg.auxState.length >= 2) {
+            if (Array.isArray(msg.auxState) && msg.auxState.length >= 1) {
                 appState.auxState = msg.auxState.slice(0, DEFAULT_AUX_NAMES.length).map((value) => Boolean(value));
             }
             if (typeof msg.serialMonitorRunning === 'boolean') {
@@ -2798,7 +2807,7 @@
         }
 
         function saveAuxName(relay) {
-            if (!requireControllerAction('rename auxiliary relays')) {
+            if (!requireControllerAction('rename auxiliary controls')) {
                 return;
             }
 
@@ -2827,7 +2836,7 @@
         }
 
         function toggleAuxRelay(relayIndex) {
-            if (!requireControllerAction('toggle auxiliary relays')) {
+            if (!requireControllerAction('toggle auxiliary controls')) {
                 return;
             }
             const nextState = !appState.auxState[relayIndex];
@@ -3212,9 +3221,13 @@
                 onImport: () => importSettingsData()
             });
 
-            document.getElementById('auxToggle0').addEventListener('click', () => toggleAuxRelay(0));
-            document.getElementById('auxToggle1').addEventListener('click', () => toggleAuxRelay(1));
-            document.getElementById('auxToggle2').addEventListener('click', () => toggleAuxRelay(2));
+            DEFAULT_AUX_NAMES.forEach((_, index) => {
+                const button = document.getElementById(`auxToggle${index}`);
+                if (!button) {
+                    return;
+                }
+                button.addEventListener('click', () => toggleAuxRelay(index));
+            });
 
             document.querySelectorAll('input[name="showMode"]').forEach((radio) => {
                 radio.addEventListener('change', syncShowMode);
@@ -3269,17 +3282,15 @@
                 renderBuilderZones();
             });
 
-            document.getElementById('aux1Name').addEventListener('input', () => {
-                captureBuilderDraftToState();
-                markBuilderDirty();
-            });
-            document.getElementById('aux2Name').addEventListener('input', () => {
-                captureBuilderDraftToState();
-                markBuilderDirty();
-            });
-            document.getElementById('aux3Name').addEventListener('input', () => {
-                captureBuilderDraftToState();
-                markBuilderDirty();
+            DEFAULT_AUX_NAMES.forEach((_, index) => {
+                const input = document.getElementById(`aux${index + 1}Name`);
+                if (!input) {
+                    return;
+                }
+                input.addEventListener('input', () => {
+                    captureBuilderDraftToState();
+                    markBuilderDirty();
+                });
             });
 
             window.addEventListener('resize', syncLayoutOffsets);

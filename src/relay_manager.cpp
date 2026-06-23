@@ -10,6 +10,8 @@ static const uint8_t REG_OUTPUT_PORT1 = 0x03;
 // Forward declarations of functions in main.cpp
 extern bool writeRegister(uint8_t address, uint8_t reg, uint8_t value);
 extern void setAllRelaysOffOnBoard(uint8_t address);
+extern void setAllAuxRelaysOffOnBoard();
+extern void setAuxRelayOnBoard(uint8_t relayIdx, bool state);
 
 RelayManager relayManager;
 
@@ -31,7 +33,8 @@ RelayManager::RelayManager()
 }
 
 void RelayManager::begin() {
-    // GPIO pins already initialized in main.cpp boot safety
+    // Master-arm safety pin is initialized in main.cpp boot safety.
+    // Auxiliary relays now route through dedicated AUX I2C PW535 board.
     setMasterArm(false);
     for (uint8_t relayIdx = 0; relayIdx < AUX_RELAY_COUNT; relayIdx++) {
         setAuxRelay(relayIdx, false);
@@ -106,13 +109,7 @@ void RelayManager::setAuxRelay(uint8_t relayIdx, bool state) {
     if (relayIdx >= AUX_RELAY_COUNT) return;
     
     auxState[relayIdx] = state;
-    int pin = AUX_RELAY_1_PIN;
-    if (relayIdx == 1) {
-        pin = AUX_RELAY_2_PIN;
-    } else if (relayIdx == 2) {
-        pin = AUX_RELAY_3_PIN;
-    }
-    digitalWrite(pin, state ? HIGH : LOW);
+    setAuxRelayOnBoard(static_cast<uint8_t>(AUX_BOARD_BASE_RELAY + relayIdx), state);
     
     Serial.printf("[RelayManager] Aux Relay %u: %s\n", relayIdx, state ? "ON" : "OFF");
 }

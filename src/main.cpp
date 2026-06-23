@@ -14,8 +14,12 @@
 // ============================================================================
 
 static uint8_t boardPresentCount = 0;
-static bool boardPresent[3] = {false, false, false};
-static bool boardCommHealthy[MAX_BOARDS] = {false, false, false};
+static bool boardPresent[MAX_BOARDS] = {};
+static bool boardCommHealthy[MAX_BOARDS] = {};
+static TwoWire auxWire = TwoWire(1);
+static bool auxBoardPresent = false;
+static uint8_t auxBoardPort0Mask = 0;
+static uint8_t auxBoardPort1Mask = 0;
 static bool killSwitchStableState = false;
 static bool killSwitchRawState = false;
 static uint32_t killSwitchLastTransitionMs = 0;
@@ -26,6 +30,58 @@ static const uint8_t REG_OUTPUT_PORT0 = 0x02;  // Relays A0-A7
 static const uint8_t REG_OUTPUT_PORT1 = 0x03;  // Relays B0-B7
 static const uint8_t REG_CONFIG_PORT0 = 0x06;  // 0 = output, 1 = input
 static const uint8_t REG_CONFIG_PORT1 = 0x07;  // 0 = output, 1 = input
+
+bool writeAuxRegister(uint8_t reg, uint8_t value) {
+  auxWire.beginTransmission(AUX_BOARD_ADDR);
+  auxWire.write(reg);
+  auxWire.write(value);
+  uint8_t errorCode = auxWire.endTransmission();
+
+  if (i2cRuntimeDiagnosticsEnabled && errorCode != 0) {
+    Serial.printf("[I2C] AUX PW535 write failed (reg=0x%02X, err=%u)\n", reg, errorCode);
+  }
+
+  return errorCode == 0;
+}
+
+void setAllAuxRelaysOffOnBoard() {
+  auxBoardPort0Mask = 0;
+  auxBoardPort1Mask = 0;
+  writeAuxRegister(REG_OUTPUT_PORT0, auxBoardPort0Mask);
+  writeAuxRegister(REG_OUTPUT_PORT1, auxBoardPort1Mask);
+}
+
+void setAuxRelayOnBoard(uint8_t relayIdx, bool state) {
+  if (!auxBoardPresent || relayIdx >= RELAYS_PER_BOARD) {
+    return;
+  }
+
+  if (relayIdx < 8) {
+    uint8_t bitMask = static_cast<uint8_t>(1U << relayIdx);
+    if (state) {
+      auxBoardPort0Mask |= bitMask;
+    } else {
+      auxBoardPort0Mask &= static_cast<uint8_t>(~bitMask);
+    }
+    writeAuxRegister(REG_OUTPUT_PORT0, auxBoardPort0Mask);
+    return;
+  }
+
+  uint8_t bitMask = static_cast<uint8_t>(1U << (relayIdx - 8));
+  if (state) {
+    auxBoardPort1Mask |= bitMask;
+  } else {
+    auxBoardPort1Mask &= static_cast<uint8_t>(~bitMask);
+  }
+  writeAuxRegister(REG_OUTPUT_PORT1, auxBoardPort1Mask);
+}
+
+bool initAuxPw535() {
+  bool ok0 = writeAuxRegister(REG_CONFIG_PORT0, 0x00);
+  bool ok1 = writeAuxRegister(REG_CONFIG_PORT1, 0x00);
+  setAllAuxRelaysOffOnBoard();
+  return ok0 && ok1;
+}
 
 int8_t getBoardIndexForAddress(uint8_t address) {
   for (uint8_t i = 0; i < MAX_BOARDS; i++) {
@@ -104,18 +160,6 @@ void setup() {
   pinMode(MASTER_ARM_RELAY_PIN, OUTPUT);
   digitalWrite(MASTER_ARM_RELAY_PIN, LOW);
   
-  // Aux Relay 1 (GPIO 26) - Active HIGH, start LOW (safe)
-  pinMode(AUX_RELAY_1_PIN, OUTPUT);
-  digitalWrite(AUX_RELAY_1_PIN, LOW);
-  
-  // Aux Relay 2 (GPIO 27) - Active HIGH, start LOW (safe)
-  pinMode(AUX_RELAY_2_PIN, OUTPUT);
-  digitalWrite(AUX_RELAY_2_PIN, LOW);
-
-  // Aux Relay 3 (GPIO 32) - Active HIGH, start LOW (safe)
-  pinMode(AUX_RELAY_3_PIN, OUTPUT);
-  digitalWrite(AUX_RELAY_3_PIN, LOW);
-  
   // MUX Select Pins (GPIO 16-19) - all outputs, start LOW
   pinMode(MUX_S0_PIN, OUTPUT);
   pinMode(MUX_S1_PIN, OUTPUT);
@@ -142,7 +186,12 @@ void setup() {
   Wire.setPins(I2C_SDA_PIN, I2C_SCL_PIN);
   Wire.begin();
   Wire.setClock(100000);
-  Serial.println("[BOOT] I2C initialized");
+  Serial.println("[BOOT] Primary I2C initialized");
+
+  auxWire.setPins(AUX_I2C_SDA_PIN, AUX_I2C_SCL_PIN);
+  auxWire.begin();
+  auxWire.setClock(100000);
+  Serial.println("[BOOT] Auxiliary I2C initialized");
 
   Serial.println("[BOOT] Initializing PW535 relay boards...");
   boardPresentCount = 0;
@@ -160,6 +209,15 @@ void setup() {
     }
   }
   Serial.printf("[BOOT] %u relay board(s) detected\n", boardPresentCount);
+
+  Serial.printf("[BOOT] Initializing AUX PW535 at 0x%02X on bus-2...\n", AUX_BOARD_ADDR);
+  auxBoardPresent = initAuxPw535();
+  if (auxBoardPresent) {
+    Serial.printf("[BOOT] AUX PW535 initialized at 0x%02X ✓\n", AUX_BOARD_ADDR);
+  } else {
+    Serial.printf("[BOOT] AUX PW535 init failed at 0x%02X ✗\n", AUX_BOARD_ADDR);
+  }
+
   i2cRuntimeDiagnosticsEnabled = true;
 
   // ========================================================================

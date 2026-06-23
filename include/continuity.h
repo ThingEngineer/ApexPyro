@@ -40,7 +40,7 @@ private:
     bool adsAvailable;
     uint32_t lastAdsRecoveryAttemptMs;
 
-    // Zone status array (48 zones total)
+    // Zone status array (MAX_ZONES total). Current hardware scan path actively updates zones 0-47.
     ContinuityStatus zoneStatus[MAX_ZONES];
     uint32_t lastScanMs;
     uint32_t lastBatteryScanMs;

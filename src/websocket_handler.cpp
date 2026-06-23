@@ -16,6 +16,9 @@ const size_t SERIAL_MONITOR_MAX_BATCH_LINES = 16;
 const size_t MAX_TRACKED_COMMAND_NONCES = 64;
 const uint32_t COMMAND_RATE_LIMIT_WINDOW_MS = 1000;
 const uint16_t COMMAND_RATE_LIMIT_MAX_PER_WINDOW = 25;
+const size_t FULL_STATE_DOC_CAPACITY = 49152;
+const size_t BUILDER_SAVE_DOC_CAPACITY = 49152;
+const size_t IMPORT_EXPORT_DOC_CAPACITY = 32768;
 }
 
 WebSocketHandler wsHandler;
@@ -609,7 +612,7 @@ void WebSocketHandler::broadcastFullState(uint32_t targetClientId) {
         return;
     }
 
-    DynamicJsonDocument doc(12288);
+    DynamicJsonDocument doc(FULL_STATE_DOC_CAPACITY);
     bool includeWiFiSecrets = (targetClientId != 0) && (targetClientId == controllerClientId);
 
     doc["type"] = "full_state";
@@ -1080,7 +1083,7 @@ void WebSocketHandler::handleFireGroupCommand(uint32_t clientId, const char* dat
 }
 
 void WebSocketHandler::handleAuxCommand(uint32_t clientId, const char* data) {
-    if (!requireControllerRole(clientId, "Only controller can toggle auxiliary relays")) {
+    if (!requireControllerRole(clientId, "Only controller can toggle auxiliary controls")) {
         return;
     }
 
@@ -1091,6 +1094,11 @@ void WebSocketHandler::handleAuxCommand(uint32_t clientId, const char* data) {
     
     uint8_t relay = doc["relay"] | 0;
     bool state = doc["state"] | false;
+
+    if (relay >= AUX_RELAY_COUNT) {
+        broadcastError("INVALID_AUX", "Aux relay index out of range");
+        return;
+    }
     
     relayManager.setAuxRelay(relay, state);
     broadcastSystemStatus();
@@ -1331,7 +1339,7 @@ void WebSocketHandler::handleBuilderSaveCommand(uint32_t clientId, const char* d
         return;
     }
 
-    DynamicJsonDocument doc(24576);
+    DynamicJsonDocument doc(BUILDER_SAVE_DOC_CAPACITY);
     DeserializationError error = deserializeJson(doc, data);
     if (error) {
         broadcastError("INVALID_JSON", "Builder save payload is invalid");
@@ -1371,7 +1379,7 @@ void WebSocketHandler::handleBuilderSaveCommand(uint32_t clientId, const char* d
 
 void WebSocketHandler::handleAuxNameCommand(uint32_t clientId, const char* data) {
     if (clientId != controllerClientId) {
-        broadcastError("UNAUTHORIZED", "Only controller can rename auxiliary relays");
+        broadcastError("UNAUTHORIZED", "Only controller can rename auxiliary controls");
         return;
     }
 
@@ -1382,6 +1390,11 @@ void WebSocketHandler::handleAuxNameCommand(uint32_t clientId, const char* data)
     
     uint8_t relay = doc["relay"] | 0;
     const char* name = doc["name"] | "";
+
+    if (relay >= AUX_RELAY_COUNT) {
+        broadcastError("INVALID_AUX", "Aux relay index out of range");
+        return;
+    }
 
     storage.setAuxRelayName(relay, name);
     markStateDirty();
@@ -1753,7 +1766,7 @@ void WebSocketHandler::handleImportShowCommand(uint32_t clientId, const char* da
         return;
     }
 
-    DynamicJsonDocument doc(8192);
+    DynamicJsonDocument doc(IMPORT_EXPORT_DOC_CAPACITY);
     DeserializationError error = deserializeJson(doc, data);
     if (error) {
         broadcastError("INVALID_JSON", "Import payload is not valid JSON");
@@ -1782,7 +1795,7 @@ void WebSocketHandler::handleExportShowCommand(uint32_t clientId) {
     }
 
     String jsonData = storage.exportShowJson();
-    DynamicJsonDocument doc(8448);
+    DynamicJsonDocument doc(IMPORT_EXPORT_DOC_CAPACITY);
     doc["type"] = "export_show";
     doc["dataRaw"] = jsonData;
 
@@ -1821,7 +1834,7 @@ void WebSocketHandler::handleImportSettingsCommand(uint32_t clientId, const char
         return;
     }
 
-    DynamicJsonDocument doc(8192);
+    DynamicJsonDocument doc(IMPORT_EXPORT_DOC_CAPACITY);
     DeserializationError error = deserializeJson(doc, data);
     if (error) {
         broadcastError("INVALID_JSON", "Settings import payload is not valid JSON");

@@ -7,6 +7,8 @@
 static const char* const ZONES_FILE_PATH = "/zones.json";
 
 namespace {
+const size_t ZONES_JSON_CAPACITY = 32768;
+
 const char* const BATTERY_POINT_V_KEYS[BATTERY_MAX_CURVE_POINTS] = {
     NVS_KEYS::SETTING_BATTERY_POINT0_V,
     NVS_KEYS::SETTING_BATTERY_POINT1_V,
@@ -27,6 +29,20 @@ const char* const BATTERY_POINT_S_KEYS[BATTERY_MAX_CURVE_POINTS] = {
     NVS_KEYS::SETTING_BATTERY_POINT5_S,
     NVS_KEYS::SETTING_BATTERY_POINT6_S,
     NVS_KEYS::SETTING_BATTERY_POINT7_S,
+};
+
+const char* const AUX_NAME_KEYS[AUX_RELAY_COUNT] = {
+    NVS_KEYS::AUX_RELAY_1_NAME,
+    NVS_KEYS::AUX_RELAY_2_NAME,
+    NVS_KEYS::AUX_RELAY_3_NAME,
+    NVS_KEYS::AUX_RELAY_4_NAME,
+};
+
+const char* const AUX_DEFAULT_NAMES[AUX_RELAY_COUNT] = {
+    "Lights",
+    "Music",
+    "LEDs",
+    "Camera",
 };
 }
 
@@ -84,9 +100,11 @@ void StorageManager::begin() {
     }
 
     prefs.begin(NVS_KEYS::NS_AUX, false);
-    if (!prefs.isKey(NVS_KEYS::AUX_RELAY_1_NAME)) prefs.putString(NVS_KEYS::AUX_RELAY_1_NAME, "Lights");
-    if (!prefs.isKey(NVS_KEYS::AUX_RELAY_2_NAME)) prefs.putString(NVS_KEYS::AUX_RELAY_2_NAME, "Music");
-    if (!prefs.isKey(NVS_KEYS::AUX_RELAY_3_NAME)) prefs.putString(NVS_KEYS::AUX_RELAY_3_NAME, "LEDs");
+    for (uint8_t relayIdx = 0; relayIdx < AUX_RELAY_COUNT; relayIdx++) {
+        if (!prefs.isKey(AUX_NAME_KEYS[relayIdx])) {
+            prefs.putString(AUX_NAME_KEYS[relayIdx], AUX_DEFAULT_NAMES[relayIdx]);
+        }
+    }
     prefs.end();
 
     // Clear now-unused NVS zone namespace to reclaim flash space.
@@ -127,14 +145,14 @@ bool StorageManager::loadZonesFromFile() {
     }
 
     size_t size = f.size();
-    if (size == 0 || size > 8192) {
+    if (size == 0 || size > ZONES_JSON_CAPACITY) {
         f.close();
         Serial.printf("[Storage] zones.json unexpected size %u; using defaults\n", size);
         zoneCacheLoaded = true;
         return false;
     }
 
-    DynamicJsonDocument doc(8192);
+    DynamicJsonDocument doc(ZONES_JSON_CAPACITY);
     DeserializationError err = deserializeJson(doc, f);
     f.close();
 
@@ -161,7 +179,7 @@ bool StorageManager::loadZonesFromFile() {
 }
 
 bool StorageManager::saveZonesToFile() {
-    DynamicJsonDocument doc(8192);
+    DynamicJsonDocument doc(ZONES_JSON_CAPACITY);
     JsonArray arr = doc.to<JsonArray>();
 
     for (uint8_t i = 0; i < MAX_ZONES; i++) {
@@ -636,32 +654,25 @@ void StorageManager::setBatteryCurve(const BatteryCurvePoint* points, uint8_t co
 // ============================================================================
 
 String StorageManager::getAuxRelayName(uint8_t relayIdx) {
+    if (relayIdx >= AUX_RELAY_COUNT) {
+        return "";
+    }
+
     Preferences prefs;
     prefs.begin(NVS_KEYS::NS_AUX, true);
-    const char* key = NVS_KEYS::AUX_RELAY_1_NAME;
-    const char* fallback = "Lights";
-    if (relayIdx == 1) {
-        key = NVS_KEYS::AUX_RELAY_2_NAME;
-        fallback = "Music";
-    } else if (relayIdx == 2) {
-        key = NVS_KEYS::AUX_RELAY_3_NAME;
-        fallback = "LEDs";
-    }
-    String name = prefs.getString(key, fallback);
+    String name = prefs.getString(AUX_NAME_KEYS[relayIdx], AUX_DEFAULT_NAMES[relayIdx]);
     prefs.end();
     return name;
 }
 
 void StorageManager::setAuxRelayName(uint8_t relayIdx, const String& name) {
+    if (relayIdx >= AUX_RELAY_COUNT) {
+        return;
+    }
+
     Preferences prefs;
     prefs.begin(NVS_KEYS::NS_AUX, false);
-    const char* key = NVS_KEYS::AUX_RELAY_1_NAME;
-    if (relayIdx == 1) {
-        key = NVS_KEYS::AUX_RELAY_2_NAME;
-    } else if (relayIdx == 2) {
-        key = NVS_KEYS::AUX_RELAY_3_NAME;
-    }
-    prefs.putString(key, name);
+    prefs.putString(AUX_NAME_KEYS[relayIdx], name);
     prefs.end();
 }
 
@@ -670,7 +681,7 @@ void StorageManager::setAuxRelayName(uint8_t relayIdx, const String& name) {
 // ============================================================================
 
 String StorageManager::exportShowJson() {
-    DynamicJsonDocument doc(8192);
+    DynamicJsonDocument doc(ZONES_JSON_CAPACITY);
 
     JsonArray zonesArray = doc.createNestedArray("zones");
     for (uint8_t i = 0; i < MAX_ZONES; i++) {
@@ -694,7 +705,7 @@ String StorageManager::exportShowJson() {
 }
 
 bool StorageManager::importShowJson(const String& jsonStr) {
-    DynamicJsonDocument doc(8192);
+    DynamicJsonDocument doc(ZONES_JSON_CAPACITY);
     DeserializationError error = deserializeJson(doc, jsonStr);
 
     if (error) {
@@ -787,9 +798,9 @@ String StorageManager::exportSettingsJson() {
     }
 
     JsonArray auxNames = doc.createNestedArray("auxNames");
-    auxNames.add(getAuxRelayName(0));
-    auxNames.add(getAuxRelayName(1));
-    auxNames.add(getAuxRelayName(2));
+    for (uint8_t relayIdx = 0; relayIdx < AUX_RELAY_COUNT; relayIdx++) {
+        auxNames.add(getAuxRelayName(relayIdx));
+    }
 
     String jsonStr;
     serializeJson(doc, jsonStr);
@@ -916,10 +927,13 @@ bool StorageManager::importSettingsJson(const String& jsonStr) {
     if (doc.containsKey("auxNames") && doc["auxNames"].is<JsonArray>()) {
         JsonArray auxNames = doc["auxNames"].as<JsonArray>();
         if (auxNames.size() >= 2) {
-            setAuxRelayName(0, auxNames[0].as<String>());
-            setAuxRelayName(1, auxNames[1].as<String>());
-            if (auxNames.size() >= 3) {
-                setAuxRelayName(2, auxNames[2].as<String>());
+            uint8_t count = auxNames.size();
+            if (count > AUX_RELAY_COUNT) {
+                count = AUX_RELAY_COUNT;
+            }
+
+            for (uint8_t relayIdx = 0; relayIdx < count; relayIdx++) {
+                setAuxRelayName(relayIdx, auxNames[relayIdx].as<String>());
             }
             appliedAnySetting = true;
         }

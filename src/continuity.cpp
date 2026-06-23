@@ -207,6 +207,8 @@ float ContinuityManager::readAdcChannel(uint8_t channel) {
 }
 
 void ContinuityManager::scanAllZones() {
+    // Current continuity hardware path is fixed to 3 MUX channels (48 zones).
+    // Zones above 47 remain UNKNOWN until continuity hardware is expanded.
     // Scan all 16 MUX positions
     // Each position gives us 3 zone readings (from 3 MUXes on A0, A1, A2)
     for (uint8_t mux_pos = 0; mux_pos < 16; mux_pos++) {

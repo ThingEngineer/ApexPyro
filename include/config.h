@@ -8,9 +8,13 @@
 // PIN ASSIGNMENTS
 // ============================================================================
 
-// I2C (existing)
+// I2C primary bus (firing relays + ADS1115 continuity)
 static const int I2C_SDA_PIN = 21;
 static const int I2C_SCL_PIN = 22;
+
+// I2C auxiliary bus (dedicated auxiliary controls PW535)
+static const int AUX_I2C_SDA_PIN = 26;
+static const int AUX_I2C_SCL_PIN = 27;
 
 // MUX Select Pins (CD74HC4067 S0-S3, shared across all 3 multiplexers)
 static const int MUX_S0_PIN = 16;
@@ -20,10 +24,7 @@ static const int MUX_S3_PIN = 19;
 
 // Relay Control Pins (Active HIGH)
 static const int MASTER_ARM_RELAY_PIN = 25;  // NO terminal → igniter bus power
-static const int AUX_RELAY_1_PIN = 26;
-static const int AUX_RELAY_2_PIN = 27;
-static const int AUX_RELAY_3_PIN = 32;
-static const uint8_t AUX_RELAY_COUNT = 3;
+static const uint8_t AUX_RELAY_COUNT = 4;  // A0-A3 on dedicated auxiliary PW535 board
 
 // Safety Input Pins
 static const int KILL_SWITCH_PIN = 34;  // Input-only pin, active HIGH trigger
@@ -40,11 +41,15 @@ static const uint8_t ADS1115_CHANNEL_CONTINUITY_MUX1 = 1;  // A1 → MUX1 output
 static const uint8_t ADS1115_CHANNEL_CONTINUITY_MUX2 = 2;  // A2 → MUX2 output (zones 32–47)
 static const uint8_t ADS1115_CHANNEL_BATTERY = 3;          // A3 → battery voltage divider
 
-// PW535 Relay Board I2C Addresses
-static const std::array<uint8_t, 3> BOARD_ADDRS = {0x20, 0x21, 0x22};
-static const uint8_t MAX_BOARDS = 3;
+// PW535 Relay Board I2C Addresses (primary firing bus)
+static const std::array<uint8_t, 8> BOARD_ADDRS = {0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27};
+static const uint8_t MAX_BOARDS = 8;
 static const uint8_t RELAYS_PER_BOARD = 16;
-static const uint8_t MAX_ZONES = MAX_BOARDS * RELAYS_PER_BOARD;  // 48
+static const uint8_t MAX_ZONES = MAX_BOARDS * RELAYS_PER_BOARD;  // 128
+
+// Dedicated auxiliary controls board on second I2C bus
+static const uint8_t AUX_BOARD_ADDR = 0x20;
+static const uint8_t AUX_BOARD_BASE_RELAY = 0;  // A0
 
 // ============================================================================
 // COMPILE-TIME DEFAULTS & SETTINGS
@@ -276,7 +281,7 @@ namespace NVS_KEYS {
     static const char* WIFI_CLIENT_SSID = "cl_ssid";
     static const char* WIFI_CLIENT_PASS = "cl_pass";
 
-    // Zone keys (suffix = zone index 0–47)
+    // Zone keys (suffix = zone index 0–127)
     static const char* ZONE_DESC_PREFIX = "desc_";
     static const char* ZONE_TIME_PREFIX = "time_";
     static const char* ZONE_ENABLED_PREFIX = "en_";
@@ -322,6 +327,7 @@ namespace NVS_KEYS {
     static const char* AUX_RELAY_1_NAME = "aux1_name";
     static const char* AUX_RELAY_2_NAME = "aux2_name";
     static const char* AUX_RELAY_3_NAME = "aux3_name";
+    static const char* AUX_RELAY_4_NAME = "aux4_name";
 }
 
 // ============================================================================
