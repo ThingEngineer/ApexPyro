@@ -1,45 +1,59 @@
-# Continuity Expansion Roadmap (48 -> 128 Zones)
+# Continuity 128-Zone Implementation Checklist
 
-Current state:
+## Target Architecture
 
-- Firing relay capacity: 128 zones (8 PW535 boards x 16 relays)
-- Continuity scan coverage: 48 zones
+- [ ] Primary I2C bus (`Wire` on GPIO 21/22) is relay-only and remains limited to the 8 PW535 firing boards at addresses `0x20` through `0x27`.
+- [ ] Auxiliary I2C bus (`auxWire` on GPIO 26/27) hosts the auxiliary PW535 board at `0x20` plus all continuity ADS1115 devices.
+- [ ] Shared mux select pins (`GPIO 16/17/18/19`) drive all 8 CD74HC4067 muxes in parallel.
+- [ ] Continuity coverage spans all 128 firing zones using 8 mux lanes x 16 positions.
+- [ ] ADS1115 `0x48` reads muxes 1-4, ADS1115 `0x49` reads muxes 5-8, and ADS1115 `0x4A` reads battery voltage plus spare channels.
 
-Reason for mismatch:
+## Firmware Checklist
 
-- ADS1115 provides 4 ADC channels.
-- Current design uses 3 channels for continuity through 3 mux outputs (A0, A1, A2).
-- Each mux channel contributes 16 zone measurements.
+### Hardware constants and init
 
-## Hardware Required to Reach 128-Zone Continuity
+- [ ] Update [include/config.h](/Users/Josh/Documents/PlatformIO/Projects/ApexPyro/include/config.h) to define the auxiliary-bus continuity model explicitly.
+- [ ] Add or revise ADC address/channel constants so the 8 continuity lanes map cleanly to the 3 ADS1115 devices.
+- [ ] Keep the `MAX_ZONES = 128` relay model unchanged.
+- [ ] Preserve boot-safe GPIO ordering before any I2C activity.
 
-Option A (recommended):
+### Continuity manager refactor
 
-- Add additional ADC capacity (for example more ADS1115 devices on primary I2C).
-- Provide 8 continuity analog paths total (one per 16-zone segment).
-- Route each 16-zone segment output to a dedicated ADC channel.
+- [ ] Refactor [src/continuity.cpp](/Users/Josh/Documents/PlatformIO/Projects/ApexPyro/src/continuity.cpp) and [include/continuity.h](/Users/Josh/Documents/PlatformIO/Projects/ApexPyro/include/continuity.h) to support multiple ADS1115 instances on `auxWire`.
+- [ ] Initialize each ADS1115 with `ads.begin(address, &auxWire)`.
+- [ ] Keep gain configuration and threshold classification behavior unchanged.
+- [ ] Scan one mux position at a time, wait for the existing 1 ms settle time, then sample all 8 lanes for that position.
+- [ ] Preserve non-blocking update behavior so continuity work does not starve relay timing or e-stop handling.
+- [ ] Keep battery reads on ADS1115 `0x4A` and ensure a battery read fault does not disable continuity reads on the other devices.
+- [ ] Degrade missing ADC coverage to `UNKNOWN` for only the affected zones or lane block instead of disabling the full manager.
 
-Option B:
+### Boot and bus isolation
 
-- Use a higher channel-count ADC subsystem that can sample at least 8 continuity lanes.
+- [ ] Update [src/main.cpp](/Users/Josh/Documents/PlatformIO/Projects/ApexPyro/src/main.cpp) so primary I2C initialization stays relay-only.
+- [ ] Initialize the auxiliary PW535 board and the continuity ADS1115 devices on `auxWire` without changing safe relay-off behavior.
+- [ ] Keep kill-switch, master arm, and other safety initialization ahead of peripheral traffic.
 
-## Firmware Work Items
+### Telemetry and UI
 
-1. Extend continuity channel mapping constants beyond current 3 channels.
-2. Add detection/init for additional ADC devices and fail-safe handling.
-3. Update scan loop to classify all 128 zone continuity values.
-4. Keep scan cadence non-blocking so relay auto-off timing and e-stop responsiveness are preserved.
-5. Add telemetry to distinguish ADC missing vs open-circuit states.
+- [ ] Verify [src/websocket_handler.cpp](/Users/Josh/Documents/PlatformIO/Projects/ApexPyro/src/websocket_handler.cpp) still broadcasts a complete 128-zone continuity payload.
+- [ ] Update [data/index.html](/Users/Josh/Documents/PlatformIO/Projects/ApexPyro/data/index.html) so no user-facing copy still says continuity is limited to zones 1-48.
+- [ ] Keep continuity help text, status text, and zone rendering aligned with the new hardware model.
 
-## UI Work Items
+## Documentation Checklist
 
-1. Add explicit continuity coverage indicator in Settings and Show pages.
-2. Display expanded continuity states for zones 49 to 128 once hardware support is active.
-3. Keep unknown/no-monitor state visually distinct from open-circuit.
+- [ ] Update [docs/ESP32_DEVKITC_V4_WIRING.md](/Users/Josh/Documents/PlatformIO/Projects/ApexPyro/docs/ESP32_DEVKITC_V4_WIRING.md) with the final 128-zone wiring, I2C bus split, and ADS1115 address map.
+- [ ] Update any other docs or operator notes that still describe continuity as a 48-zone system.
+- [ ] Keep the roadmap file itself as the current implementation checklist until the refactor is complete.
 
-## Validation Plan
+## Validation Checklist
 
-1. Cold-boot detection of all continuity ADC devices.
-2. Inject known continuity values on representative zones across all 8 segments.
-3. Confirm no watchdog or loop starvation while scanning full coverage.
-4. Confirm firing and e-stop timing remain deterministic under full continuity scan load.
+- [ ] Build firmware successfully after each major firmware edit.
+- [ ] Confirm boot logs show relay boards on primary I2C only and continuity ADCs on auxWire.
+- [ ] Confirm live continuity status updates for zones across all 8 mux lanes.
+- [ ] Confirm relay start/complete serial logs still appear while continuity scanning is active.
+- [ ] Confirm the live browser page reflects the 128-zone continuity architecture after UI/doc changes.
+
+## Notes
+
+- Keep zone indexing 0-based internally and 1-based in operator-facing text.
+- Prefer graceful degradation for a missing ADC block over disabling the entire continuity subsystem.

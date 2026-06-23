@@ -6,20 +6,20 @@ This document defines the expected hardware wiring for ApexPyro on ESP32 DevKitC
 
 - Master arm output must default OFF on boot.
 - Firing relay I2C bus is safety-critical and should not be repurposed.
-- Auxiliary controls are on a separate I2C bus to avoid disturbing firing bus timing.
+- Auxiliary controls and continuity ADCs are on a separate I2C bus to avoid disturbing firing bus timing.
 
 ## GPIO Assignment Table
 
 | Function                                 | GPIO | Direction         | Notes                     |
 | ---------------------------------------- | ---: | ----------------- | ------------------------- |
-| Primary I2C SDA (firing PW535 + ADS1115) |   21 | bidirectional     | Keep stable; 100 kHz      |
-| Primary I2C SCL (firing PW535 + ADS1115) |   22 | output/open-drain | Keep stable; 100 kHz      |
-| Auxiliary I2C SDA (aux PW535)            |   26 | bidirectional     | Dedicated auxiliary bus   |
-| Auxiliary I2C SCL (aux PW535)            |   27 | output/open-drain | Dedicated auxiliary bus   |
-| MUX S0                                   |   16 | output            | Continuity channel select |
-| MUX S1                                   |   17 | output            | Continuity channel select |
-| MUX S2                                   |   18 | output            | Continuity channel select |
-| MUX S3                                   |   19 | output            | Continuity channel select |
+| Primary I2C SDA (firing PW535 only)      |   21 | bidirectional     | Keep stable; 100 kHz      |
+| Primary I2C SCL (firing PW535 only)      |   22 | output/open-drain | Keep stable; 100 kHz      |
+| Auxiliary I2C SDA (aux PW535 + ADS1115s) |   26 | bidirectional     | Dedicated auxiliary bus   |
+| Auxiliary I2C SCL (aux PW535 + ADS1115s) |   27 | output/open-drain | Dedicated auxiliary bus   |
+| MUX S0                                   |   16 | output            | Shared across all 8 muxes |
+| MUX S1                                   |   17 | output            | Shared across all 8 muxes |
+| MUX S2                                   |   18 | output            | Shared across all 8 muxes |
+| MUX S3                                   |   19 | output            | Shared across all 8 muxes |
 | Master Arm Relay                         |   25 | output            | Active HIGH, boot LOW     |
 | Kill Switch                              |   34 | input             | Active HIGH, debounced    |
 
@@ -27,13 +27,14 @@ This document defines the expected hardware wiring for ApexPyro on ESP32 DevKitC
 
 ### Primary Bus (Wire, GPIO21/GPIO22)
 
-- ADS1115 at 0x48
 - PW535 firing relay boards at 0x20 to 0x27
 
 ### Auxiliary Bus (Wire1, GPIO26/GPIO27)
 
 - PW535 auxiliary controls board at 0x20
-- Active auxiliary channels: A0 to A3 (Aux 1 to Aux 4)
+- ADS1115 at 0x48: continuity muxes 1-4 (zones 1-64)
+- ADS1115 at 0x49: continuity muxes 5-8 (zones 65-128)
+- ADS1115 at 0x4A: battery divider on A0, spare channels on A1-A3
 
 ## PW535 Address Map (A0/A1/A2)
 
@@ -48,8 +49,17 @@ This document defines the expected hardware wiring for ApexPyro on ESP32 DevKitC
 | 0x26    | GND | VCC | VCC |
 | 0x27    | VCC | VCC | VCC |
 
+## ADS1115 Address Map (0x48/0x49/0x4A/0x4B)
+
+| Address | ADDR Pin Connection |
+| ------- | ------------------- |
+| 0x48    | GND (default)       |
+| 0x49    | VDD (VCC)           |
+| 0x4A    | SDA                 |
+| 0x4B    | SCL                 |
+
 ## Continuity Hardware Scope
 
-- Current continuity scan hardware covers zones 1 to 48 only (3 mux channels x 16 positions).
-- Firing capacity supports up to 128 zones.
-- Zones 49 to 128 should be treated as no continuity monitor until hardware is expanded.
+- Continuity scan hardware covers zones 1 to 128.
+- Each mux position reads 8 shared mux outputs across 3 ADS1115 devices on the auxiliary bus.
+- The battery divider is isolated to ADS1115 `0x4A` so continuity scan capacity stays dedicated to zones 1 to 128.

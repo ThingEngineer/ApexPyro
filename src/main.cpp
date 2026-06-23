@@ -16,7 +16,7 @@
 static uint8_t boardPresentCount = 0;
 static bool boardPresent[MAX_BOARDS] = {};
 static bool boardCommHealthy[MAX_BOARDS] = {};
-static TwoWire auxWire = TwoWire(1);
+TwoWire auxWire = TwoWire(1);
 static bool auxBoardPresent = false;
 static uint8_t auxBoardPort0Mask = 0;
 static uint8_t auxBoardPort1Mask = 0;

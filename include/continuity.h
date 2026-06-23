@@ -2,6 +2,7 @@
 #define CONTINUITY_H
 
 #include <Arduino.h>
+#include <array>
 #include "config.h"
 
 class ContinuityManager {
@@ -38,9 +39,10 @@ private:
     };
 
     bool adsAvailable;
-    uint32_t lastAdsRecoveryAttemptMs;
+    std::array<bool, ADS1115_CONTINUITY_DEVICE_COUNT> adsAvailableByDevice;
+    std::array<uint32_t, ADS1115_CONTINUITY_DEVICE_COUNT> lastAdsRecoveryAttemptMsByDevice;
 
-    // Zone status array (MAX_ZONES total). Current hardware scan path actively updates zones 0-47.
+    // Zone status array (MAX_ZONES total). Hardware scan path actively updates all 128 zones.
     ContinuityStatus zoneStatus[MAX_ZONES];
     uint32_t lastScanMs;
     uint32_t lastBatteryScanMs;
@@ -61,9 +63,9 @@ private:
     ResolvedBatteryProfile batteryProfile;
     
     // Helper methods
-    bool initializeAds(bool isRecoveryAttempt);
-    bool probeAdsConnection();
-    void handleAdsUnavailable(const char* reason);
+    bool initializeAdsDevice(uint8_t deviceIdx, bool isRecoveryAttempt);
+    bool probeAdsConnection(uint8_t deviceIdx);
+    void handleAdsUnavailable(uint8_t deviceIdx, const char* reason);
     void setMuxPosition(uint8_t position);
     void scanAllZones();
     void readBatteryVoltage();
@@ -71,7 +73,7 @@ private:
     void applyPresetProfile(BatteryProfile profileId, uint8_t overrideCellCount);
     int calculateBatteryPercent(float packVoltage) const;
     ContinuityStatus classifyVoltage(float voltage);
-    float readAdcChannel(uint8_t channel);
+    float readAdcChannel(uint8_t deviceIdx, uint8_t channel);
 };
 
 extern ContinuityManager continuityManager;

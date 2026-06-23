@@ -4,15 +4,18 @@
 #include <cstdint>
 #include <array>
 
+class TwoWire;
+extern TwoWire auxWire;
+
 // ============================================================================
 // PIN ASSIGNMENTS
 // ============================================================================
 
-// I2C primary bus (firing relays + ADS1115 continuity)
+// I2C primary bus (firing relays only)
 static const int I2C_SDA_PIN = 21;
 static const int I2C_SCL_PIN = 22;
 
-// I2C auxiliary bus (dedicated auxiliary controls PW535)
+// I2C auxiliary bus (aux PW535 + continuity ADS1115 devices)
 static const int AUX_I2C_SDA_PIN = 26;
 static const int AUX_I2C_SCL_PIN = 27;
 
@@ -34,12 +37,21 @@ static const uint16_t KILL_SWITCH_DEBOUNCE_MS = 50;
 // I2C ADDRESSES & ADS1115 CHANNELS
 // ============================================================================
 
-// ADS1115 Analog-to-Digital Converter (0x48 = ADDR pin tied to GND)
-static const uint8_t ADS1115_I2C_ADDR = 0x48;
-static const uint8_t ADS1115_CHANNEL_CONTINUITY_MUX0 = 0;  // A0 → MUX0 output (zones 0–15)
-static const uint8_t ADS1115_CHANNEL_CONTINUITY_MUX1 = 1;  // A1 → MUX1 output (zones 16–31)
-static const uint8_t ADS1115_CHANNEL_CONTINUITY_MUX2 = 2;  // A2 → MUX2 output (zones 32–47)
-static const uint8_t ADS1115_CHANNEL_BATTERY = 3;          // A3 → battery voltage divider
+// ADS1115 continuity/battery devices on auxWire
+static const uint8_t ADS1115_CONTINUITY_ADDR_MUX_0 = 0x48;  // MUX lanes 1-4
+static const uint8_t ADS1115_CONTINUITY_ADDR_MUX_1 = 0x49;  // MUX lanes 5-8
+static const uint8_t ADS1115_CONTINUITY_ADDR_BATTERY = 0x4A; // Battery voltage divider + spare channels
+static const std::array<uint8_t, 3> ADS1115_CONTINUITY_ADDRS = {{
+    ADS1115_CONTINUITY_ADDR_MUX_0,
+    ADS1115_CONTINUITY_ADDR_MUX_1,
+    ADS1115_CONTINUITY_ADDR_BATTERY,
+}};
+
+static const uint8_t ADS1115_CONTINUITY_DEVICE_COUNT = 3;
+static const uint8_t ADS1115_CONTINUITY_LANE_COUNT = 8;
+static const uint8_t ADS1115_CONTINUITY_LANES_PER_DEVICE = 4;
+static const uint8_t ADS1115_CONTINUITY_ZONE_SPAN_PER_LANE = 16;
+static const uint8_t ADS1115_CONTINUITY_BATTERY_DEVICE_INDEX = 2;
 
 // PW535 Relay Board I2C Addresses (primary firing bus)
 static const std::array<uint8_t, 8> BOARD_ADDRS = {0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27};
