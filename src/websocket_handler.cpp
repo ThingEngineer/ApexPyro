@@ -1471,7 +1471,37 @@ void WebSocketHandler::handleApConfigCommand(uint32_t clientId, const char* data
     const char* ssid = doc["ssid"] | DEFAULT_AP_SSID;
     const char* pass = doc["pass"] | DEFAULT_AP_PASSWORD;
 
+    const size_t ssidLen = strlen(ssid);
+    const size_t passLen = strlen(pass);
+
+    if (ssidLen == 0 || ssidLen > 31) {
+        broadcastError("INVALID_AP_SSID", "AP SSID must be 1-31 characters");
+        return;
+    }
+
+    if (passLen < 8 || passLen > 63) {
+        broadcastError("INVALID_AP_PASSWORD", "AP password must be 8-63 characters");
+        return;
+    }
+
     storage.setApCredentials(ssid, pass);
+
+    if (wifiManager.isAPActive()) {
+        wifiManager.stopAPMode();
+        wifiManager.startAPMode();
+    }
+
+    StaticJsonDocument<160> result;
+    result["type"] = "ap_credentials_result";
+    result["ok"] = true;
+    result["msg"] = "AP settings saved";
+    String resultPayload;
+    serializeJson(result, resultPayload);
+    AsyncWebSocketClient* client = ws.client(clientId);
+    if (client) {
+        client->text(resultPayload);
+    }
+
     markStateDirty();
 }
 

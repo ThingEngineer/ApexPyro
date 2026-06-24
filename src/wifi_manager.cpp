@@ -43,7 +43,9 @@ void WiFiManager::startAPMode() {
         Serial.printf("AP Started: SSID=%s\n", ssid.c_str());
         Serial.printf("AP IP: %s\n", WiFi.softAPIP().toString().c_str());
     } else {
+        apActive = false;
         Serial.println("[WiFi] Failed to start AP mode");
+        wsHandler.broadcastError("AP_START_FAILED", "Hosted AP failed to start");
     }
 }
 

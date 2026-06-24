@@ -1332,6 +1332,9 @@
                 case 'factory_reset_result':
                     showToast(msg.msg || 'Factory reset started', 'success');
                     break;
+                case 'ap_credentials_result':
+                    showToast(msg.msg || 'AP settings saved', msg.ok ? 'success' : 'error');
+                    break;
                 case 'serial_monitor_state':
                     updateSerialMonitorState(msg);
                     break;
@@ -2649,12 +2652,24 @@
                 return;
             }
 
+            const ssid = document.getElementById('apSsid').value.trim();
+            const pass = document.getElementById('apPassword').value.trim();
+
+            if (!ssid || ssid.length > 31) {
+                showToast('AP SSID must be 1-31 characters', 'error');
+                return;
+            }
+
+            if (pass.length < 8 || pass.length > 63) {
+                showToast('AP password must be 8-63 characters', 'error');
+                return;
+            }
+
             wsSend({
                 type: 'set_ap_credentials',
-                ssid: document.getElementById('apSsid').value.trim(),
-                pass: document.getElementById('apPassword').value.trim()
+                ssid,
+                pass
             });
-            showToast('AP settings saved', 'success');
         }
 
         function forgetNetwork() {
