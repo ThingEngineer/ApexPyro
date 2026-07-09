@@ -459,6 +459,8 @@ void WebSocketHandler::onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* c
             wsHandler.handleWiFiConnectCommand(clientId, payload.c_str());
         } else if (strcmp(msgType, "wifi_forget") == 0) {
             wsHandler.handleForgetWiFiCommand(clientId);
+        } else if (strcmp(msgType, "wifi_reset_credentials") == 0) {
+            wsHandler.handleResetWiFiCredentialsCommand(clientId);
         } else if (strcmp(msgType, "clear_all") == 0) {
             wsHandler.handleClearAllCommand(clientId);
         } else if (strcmp(msgType, "export_show") == 0) {
@@ -1512,6 +1514,30 @@ void WebSocketHandler::handleForgetWiFiCommand(uint32_t clientId) {
     }
 
     wifiManager.forgetNetwork();
+    broadcastWiFiStatus();
+    markStateDirty();
+}
+
+void WebSocketHandler::handleResetWiFiCredentialsCommand(uint32_t clientId) {
+    if (clientId != controllerClientId) {
+        broadcastError("UNAUTHORIZED", "Only controller can reset WiFi credentials");
+        return;
+    }
+
+    wifiManager.resetWiFiCredentialsToDefaults();
+
+    StaticJsonDocument<192> doc;
+    doc["type"] = "wifi_reset_credentials_result";
+    doc["ok"] = true;
+    doc["msg"] = "WiFi credentials reset to defaults";
+
+    String payload;
+    serializeJson(doc, payload);
+    AsyncWebSocketClient* client = ws.client(clientId);
+    if (client) {
+        client->text(payload);
+    }
+
     broadcastWiFiStatus();
     markStateDirty();
 }

@@ -23,6 +23,11 @@ static uint8_t auxBoardPort1Mask = 0;
 static bool killSwitchStableState = false;
 static bool killSwitchRawState = false;
 static uint32_t killSwitchLastTransitionMs = 0;
+static bool wifiResetButtonStablePressed = false;
+static bool wifiResetButtonRawPressed = false;
+static uint32_t wifiResetButtonLastTransitionMs = 0;
+static uint32_t wifiResetButtonPressStartMs = 0;
+static bool wifiResetButtonTriggered = false;
 static bool i2cRuntimeDiagnosticsEnabled = false;
 
 // Relay board register constants
@@ -175,6 +180,14 @@ void setup() {
   killSwitchStableState = (digitalRead(KILL_SWITCH_PIN) == HIGH);
   killSwitchRawState = killSwitchStableState;
   killSwitchLastTransitionMs = millis();
+
+  // Physical WiFi reset button input (active LOW, pulled up)
+  pinMode(WIFI_RESET_BUTTON_PIN, INPUT_PULLUP);
+  wifiResetButtonStablePressed = (digitalRead(WIFI_RESET_BUTTON_PIN) == LOW);
+  wifiResetButtonRawPressed = wifiResetButtonStablePressed;
+  wifiResetButtonLastTransitionMs = millis();
+  wifiResetButtonPressStartMs = wifiResetButtonStablePressed ? millis() : 0;
+  wifiResetButtonTriggered = false;
   
   Serial.println("[BOOT] Safety GPIO states confirmed");
   delay(100);
@@ -280,6 +293,34 @@ void loop() {
       Serial.println("[SAFETY] Physical kill switch triggered");
       wsHandler.triggerEmergencyStop("Physical kill switch");
     }
+  }
+
+  // Debounced physical WiFi reset button handling (long-press).
+  bool wifiResetRawPressed = (digitalRead(WIFI_RESET_BUTTON_PIN) == LOW);
+  if (wifiResetRawPressed != wifiResetButtonRawPressed) {
+    wifiResetButtonRawPressed = wifiResetRawPressed;
+    wifiResetButtonLastTransitionMs = millis();
+  }
+
+  if ((millis() - wifiResetButtonLastTransitionMs) >= WIFI_RESET_BUTTON_DEBOUNCE_MS && wifiResetButtonStablePressed != wifiResetButtonRawPressed) {
+    wifiResetButtonStablePressed = wifiResetButtonRawPressed;
+    if (wifiResetButtonStablePressed) {
+      wifiResetButtonPressStartMs = millis();
+      wifiResetButtonTriggered = false;
+    } else {
+      wifiResetButtonPressStartMs = 0;
+      wifiResetButtonTriggered = false;
+    }
+  }
+
+  if (wifiResetButtonStablePressed && !wifiResetButtonTriggered && wifiResetButtonPressStartMs > 0 &&
+      (millis() - wifiResetButtonPressStartMs) >= WIFI_RESET_BUTTON_HOLD_MS) {
+    wifiResetButtonTriggered = true;
+    Serial.println("[SAFETY] Physical WiFi reset button held, resetting WiFi credentials to defaults");
+    wifiManager.resetWiFiCredentialsToDefaults();
+    wsHandler.broadcastError("WIFI_CREDS_RESET", "WiFi credentials reset to defaults");
+    wsHandler.broadcastWiFiStatus();
+    wsHandler.broadcastFullState();
   }
 
   // Update all managers

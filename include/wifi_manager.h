@@ -36,6 +36,7 @@ public:
     bool isClientConnected();
     String getCurrentSSID();
     void forgetNetwork();
+    void resetWiFiCredentialsToDefaults();
 
     // mDNS
     void startMDNS();

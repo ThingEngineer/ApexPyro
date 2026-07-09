@@ -112,6 +112,7 @@ private:
     void handleAuxNameCommand(uint32_t clientId, const char* data);
     void handleApConfigCommand(uint32_t clientId, const char* data);
     void handleForgetWiFiCommand(uint32_t clientId);
+    void handleResetWiFiCredentialsCommand(uint32_t clientId);
     void handleWiFiConnectCommand(uint32_t clientId, const char* data);
     void handleImportShowCommand(uint32_t clientId, const char* data);
     void handleImportSettingsCommand(uint32_t clientId, const char* data);

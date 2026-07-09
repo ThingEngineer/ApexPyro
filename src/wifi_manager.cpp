@@ -208,6 +208,27 @@ void WiFiManager::forgetNetwork() {
     startAPMode();
 }
 
+void WiFiManager::resetWiFiCredentialsToDefaults() {
+    storage.setApCredentials(DEFAULT_AP_SSID, DEFAULT_AP_PASSWORD);
+    storage.setClientCredentials("", "");
+
+    if (isClientConnected()) {
+        WiFi.disconnect(false, false);
+    }
+
+    connectState = WiFiConnectState::IDLE;
+    connectRetryCount = 0;
+    retryAtMs = 0;
+    bootAutoConnect = false;
+    pendingConnectSsid = "";
+    pendingConnectPass = "";
+    clientConnected = false;
+
+    stopAPMode();
+    startAPMode();
+    Serial.println("[WiFi] WiFi credentials reset to defaults");
+}
+
 bool WiFiManager::isClientConnected() {
     return (WiFi.status() == WL_CONNECTED);
 }

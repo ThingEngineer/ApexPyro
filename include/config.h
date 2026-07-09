@@ -32,6 +32,9 @@ static const uint8_t AUX_RELAY_COUNT = 4;  // A0-A3 on dedicated auxiliary PW535
 // Safety Input Pins
 static const int KILL_SWITCH_PIN = 34;  // Input-only pin, active HIGH trigger
 static const uint16_t KILL_SWITCH_DEBOUNCE_MS = 50;
+static const int WIFI_RESET_BUTTON_PIN = 32;  // Active LOW with pull-up, long-press to reset WiFi credentials
+static const uint16_t WIFI_RESET_BUTTON_DEBOUNCE_MS = 50;
+static const uint16_t WIFI_RESET_BUTTON_HOLD_MS = 3000;
 
 // ============================================================================
 // I2C ADDRESSES & ADS1115 CHANNELS

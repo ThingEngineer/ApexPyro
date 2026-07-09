@@ -10,18 +10,28 @@ This document defines the expected hardware wiring for ApexPyro on ESP32 DevKitC
 
 ## GPIO Assignment Table
 
-| Function                                 | GPIO | Direction         | Notes                     |
-| ---------------------------------------- | ---: | ----------------- | ------------------------- |
-| Primary I2C SDA (firing PW535 only)      |   21 | bidirectional     | Keep stable; 100 kHz      |
-| Primary I2C SCL (firing PW535 only)      |   22 | output/open-drain | Keep stable; 100 kHz      |
-| Auxiliary I2C SDA (aux PW535 + ADS1115s) |   26 | bidirectional     | Dedicated auxiliary bus   |
-| Auxiliary I2C SCL (aux PW535 + ADS1115s) |   27 | output/open-drain | Dedicated auxiliary bus   |
-| MUX S0                                   |   16 | output            | Shared across all 8 muxes |
-| MUX S1                                   |   17 | output            | Shared across all 8 muxes |
-| MUX S2                                   |   18 | output            | Shared across all 8 muxes |
-| MUX S3                                   |   19 | output            | Shared across all 8 muxes |
-| Master Arm Relay                         |   25 | output            | Active HIGH, boot LOW     |
-| Kill Switch                              |   34 | input             | Active HIGH, debounced    |
+| Function                                 | GPIO | Direction         | Notes                             |
+| ---------------------------------------- | ---: | ----------------- | --------------------------------- |
+| Primary I2C SDA (firing PW535 only)      |   21 | bidirectional     | Keep stable; 100 kHz              |
+| Primary I2C SCL (firing PW535 only)      |   22 | output/open-drain | Keep stable; 100 kHz              |
+| Auxiliary I2C SDA (aux PW535 + ADS1115s) |   26 | bidirectional     | Dedicated auxiliary bus           |
+| Auxiliary I2C SCL (aux PW535 + ADS1115s) |   27 | output/open-drain | Dedicated auxiliary bus           |
+| MUX S0                                   |   16 | output            | Shared across all 8 muxes         |
+| MUX S1                                   |   17 | output            | Shared across all 8 muxes         |
+| MUX S2                                   |   18 | output            | Shared across all 8 muxes         |
+| MUX S3                                   |   19 | output            | Shared across all 8 muxes         |
+| Master Arm Relay                         |   25 | output            | Active HIGH, boot LOW             |
+| Kill Switch                              |   34 | input             | Active HIGH, debounced            |
+| WiFi Reset Button                        |   32 | input             | Active LOW, INPUT_PULLUP, hold 3s |
+
+## Physical WiFi Reset Button
+
+- Connect a normally-open momentary button between GPIO32 and GND.
+- The firmware enables `INPUT_PULLUP` on GPIO32, so no external pull-up resistor is required.
+- Hold the button for at least 3 seconds to reset WiFi credentials to defaults:
+  - AP SSID: `ApexPyro`
+  - AP password: `apexFIRE!pyro`
+  - Saved external client network credentials are cleared.
 
 ## I2C Devices
 
