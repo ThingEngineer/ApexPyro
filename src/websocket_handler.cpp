@@ -387,7 +387,7 @@ void WebSocketHandler::onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* c
         }
         
     } else if (type == WS_EVT_DATA) {
-        AwsFrameInfo* info = (AwsFrameInfo*)arg;
+        AwsFrameInfo* info = reinterpret_cast<AwsFrameInfo*>(arg);
         uint32_t clientId = client->id();
 
         String& payload = wsHandler.getOrCreatePayloadBuffer(clientId);
@@ -615,7 +615,7 @@ void WebSocketHandler::broadcastFullState(uint32_t targetClientId) {
     }
 
     DynamicJsonDocument doc(FULL_STATE_DOC_CAPACITY);
-    bool includeWiFiSecrets = (targetClientId != 0) && (targetClientId == controllerClientId);
+    bool includeWiFiSecrets = (targetClientId == controllerClientId);
 
     doc["type"] = "full_state";
     doc["masterArmed"] = relayManager.isMasterArmed();
@@ -627,9 +627,7 @@ void WebSocketHandler::broadcastFullState(uint32_t targetClientId) {
     doc["showState"] = static_cast<uint8_t>(showRunner.getShowState());
     doc["showRunning"] = showRunner.isShowRunning();
 
-    if (targetClientId != 0) {
-        doc["role"] = (targetClientId == controllerClientId) ? "controller" : "viewer";
-    }
+    doc["role"] = (targetClientId == controllerClientId) ? "controller" : "viewer";
 
     JsonObject wifi = doc.createNestedObject("wifiConfig");
     wifi["apSsid"] = storage.getApSSID();
@@ -1686,7 +1684,7 @@ void WebSocketHandler::handleRoleLockCommand(uint32_t clientId, const char* data
     if (!parseJsonPayload(doc, data, "Role lock payload is not valid JSON")) {
         return;
     }
-    bool locked = doc["locked"] | true;
+    bool locked = doc.containsKey("locked") ? doc["locked"].as<bool>() : true;
 
     controllerRoleLocked = locked;
     if (controllerRoleLocked) {

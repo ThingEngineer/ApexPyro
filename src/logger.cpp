@@ -11,7 +11,7 @@ const size_t LOG_PRINTF_BUFFER_SIZE = 320;
 ApexSerialLogger apexSerial;
 
 ApexSerialLogger::ApexSerialLogger()
-    : serialPort(&::Serial), writeIndex(0), lineCount(0), nextSequence(0) {
+    : serialPort(&::Serial), capturedSeq{}, writeIndex(0), lineCount(0), nextSequence(0) {
 }
 
 void ApexSerialLogger::begin(unsigned long baudRate) {
@@ -27,7 +27,7 @@ size_t ApexSerialLogger::print(const char* value) {
 }
 
 size_t ApexSerialLogger::print(char value) {
-    char buffer[2] = {value, '\0'};
+    const char buffer[2] = {value, '\0'};
     return writeText(buffer);
 }
 

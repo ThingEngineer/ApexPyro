@@ -208,13 +208,6 @@ bool StorageManager::saveZonesToFile() {
     return true;
 }
 
-String StorageManager::makeZoneKey(const char* prefix, uint8_t zoneIdx) {
-    String key = String(prefix);
-    if (zoneIdx < 10) key += "0";
-    key += String(zoneIdx);
-    return key;
-}
-
 // ============================================================================
 // WiFi
 // ============================================================================

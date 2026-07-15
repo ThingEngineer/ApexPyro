@@ -70,7 +70,6 @@ private:
     String pendingConnectPass;
 
     void handleClientDisconnect();
-    void fallbackToAPMode();
     void beginConnectAttempt();
     void completeConnectionSuccess();
     void scheduleRetry();

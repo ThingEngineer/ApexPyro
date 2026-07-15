@@ -19,6 +19,9 @@ RelayManager::RelayManager()
     : masterArmed(false), isFiring(false), firingZoneIdx(0),
       firingZoneCount(0), boardPresentCount(0),
       fireJustCompleted(false) {
+    for (uint8_t i = 0; i < MAX_BOARDS; i++) {
+        boardPresent[i] = false;
+    }
     for (uint8_t relayIdx = 0; relayIdx < AUX_RELAY_COUNT; relayIdx++) {
         auxState[relayIdx] = false;
     }
@@ -169,7 +172,6 @@ void RelayManager::startZonesFire(const std::vector<uint8_t>& zoneIndices, uint3
         }
 
         uint8_t boardIndex = zoneIdx / RELAYS_PER_BOARD;
-        uint8_t relayIndex = zoneIdx % RELAYS_PER_BOARD;
         if (boardIndex >= boardPresentCount || !boardPresent[boardIndex]) {
             continue;
         }

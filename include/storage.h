@@ -107,8 +107,6 @@ public:
     void resetToDefaults();  // Full factory reset
     
 private:
-    Preferences prefs;
-
     // Zone data is kept in a RAM cache and persisted as /zones.json on LittleFS.
     // This avoids NVS exhaustion from 240+ individual zone keys.
     ZoneData    zoneCache[MAX_ZONES];
@@ -117,8 +115,6 @@ private:
     void initZoneDefaults();
     bool loadZonesFromFile();
     bool saveZonesToFile();
-
-    String makeZoneKey(const char* prefix, uint8_t zoneIdx);
 };
 
 extern StorageManager storage;

@@ -297,10 +297,6 @@ void WiFiManager::handleClientDisconnect() {
     }
 }
 
-void WiFiManager::fallbackToAPMode() {
-    if (!apActive) startAPMode();
-}
-
 String WiFiManager::getMacAddress() { return WiFi.macAddress(); }
 
 String WiFiManager::getLocalIP() {
