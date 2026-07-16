@@ -12,14 +12,14 @@
 
 ### Hardware constants and init
 
-- [x] Update [include/config.h](/Users/Josh/Documents/PlatformIO/Projects/ApexPyro/include/config.h) to define the auxiliary-bus continuity model explicitly.
+- [x] Update [include/config.h](/include/config.h) to define the auxiliary-bus continuity model explicitly.
 - [x] Add or revise ADC address/channel constants so the 8 continuity lanes map cleanly to the 3 ADS1115 devices.
 - [x] Keep the `MAX_ZONES = 128` relay model unchanged.
 - [x] Preserve boot-safe GPIO ordering before any I2C activity.
 
 ### Continuity manager refactor
 
-- [x] Refactor [src/continuity.cpp](/Users/Josh/Documents/PlatformIO/Projects/ApexPyro/src/continuity.cpp) and [include/continuity.h](/Users/Josh/Documents/PlatformIO/Projects/ApexPyro/include/continuity.h) to support multiple ADS1115 instances on `auxWire`.
+- [x] Refactor [src/continuity.cpp](/src/continuity.cpp) and [include/continuity.h](/include/continuity.h) to support multiple ADS1115 instances on `auxWire`.
 - [x] Initialize each ADS1115 with `ads.begin(address, &auxWire)`.
 - [x] Keep gain configuration and threshold classification behavior unchanged.
 - [x] Scan one mux position at a time, wait for the existing 1 ms settle time, then sample all 8 lanes for that position.
@@ -29,19 +29,19 @@
 
 ### Boot and bus isolation
 
-- [x] Update [src/main.cpp](/Users/Josh/Documents/PlatformIO/Projects/ApexPyro/src/main.cpp) so primary I2C initialization stays relay-only.
+- [x] Update [src/main.cpp](/src/main.cpp) so primary I2C initialization stays relay-only.
 - [x] Initialize the auxiliary PW535 board and the continuity ADS1115 devices on `auxWire` without changing safe relay-off behavior.
 - [x] Keep kill-switch, master arm, and other safety initialization ahead of peripheral traffic.
 
 ### Telemetry and UI
 
-- [x] Verify [src/websocket_handler.cpp](/Users/Josh/Documents/PlatformIO/Projects/ApexPyro/src/websocket_handler.cpp) still broadcasts a complete 128-zone continuity payload.
-- [x] Update [data/index.html](/Users/Josh/Documents/PlatformIO/Projects/ApexPyro/data/index.html) so no user-facing copy still says continuity is limited to zones 1-48.
+- [x] Verify [src/websocket_handler.cpp](/src/websocket_handler.cpp) still broadcasts a complete 128-zone continuity payload.
+- [x] Update [data/index.html](/data/index.html) so no user-facing copy still says continuity is limited to zones 1-48.
 - [x] Keep continuity help text, status text, and zone rendering aligned with the new hardware model.
 
 ## Documentation Checklist
 
-- [x] Update [docs/ESP32_DEVKITC_V4_WIRING.md](/Users/Josh/Documents/PlatformIO/Projects/ApexPyro/docs/ESP32_DEVKITC_V4_WIRING.md) with the final 128-zone wiring, I2C bus split, and ADS1115 address map.
+- [x] Update [docs/ESP32_DEVKITC_V4_WIRING.md](/docs/ESP32_DEVKITC_V4_WIRING.md) with the final 128-zone wiring, I2C bus split, and ADS1115 address map.
 - [x] Update any other docs or operator notes that still describe continuity as a 48-zone system.
 - [x] Keep the roadmap file itself as the current implementation checklist until the refactor is complete.
 
