@@ -80,7 +80,6 @@ pio device monitor
 ## Documentation
 
 - [ESP32 DevKitC V4 Wiring](docs/ESP32_DEVKITC_V4_WIRING.md)
-- [I2C Address Selection](docs/I2C_Address_Selection.md)
 - [128-Zone Continuity Roadmap](docs/CONTINUITY_128_ROADMAP.md)
 - [Hardware Notes](hardware/README)
 
