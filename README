@@ -83,6 +83,10 @@ pio device monitor
 - [128-Zone Continuity Roadmap](docs/CONTINUITY_128_ROADMAP.md)
 - [Hardware Notes](hardware/README)
 
+## Roadmap
+
+The project roadmap tracks planned product and UX improvements for upcoming iterations. See [ROADMAP](ROADMAP) for the current list.
+
 ## Firmware and UI Architecture
 
 The project is organized around a few major runtime components:
