@@ -1,0 +1,18 @@
+## Hardware Notes
+
+This directory is reserved for hardware-specific documentation and future design files related to ApexPyro.
+
+## Licensing Direction
+
+Any future custom PCB designs, schematics, fabrication outputs, or related hardware source files added to this directory are intended to be licensed under the [CERN Open Hardware License Version 2 - Weakly Reciprocal](LICENSE-HARDWARE).
+
+## Current Status
+
+- No custom PCB design files are published here yet.
+- The current controller build is documented primarily through wiring and integration notes in the main repository docs.
+
+## Planned Contents
+
+- Custom PCB design source files
+- Schematics and board-level integration notes
+- Manufacturing and assembly guidance when hardware designs are published
