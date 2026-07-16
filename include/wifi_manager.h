@@ -1,3 +1,9 @@
+/*
+ * Licensed under the Apache License 2.0. See LICENSE.
+ * ApexPyro controls pyrotechnic hardware and is provided as-is, without warranty.
+ * Compiling, flashing, and operating this software is entirely at your own risk.
+ */
+
 #ifndef WIFI_MANAGER_H
 #define WIFI_MANAGER_H
 
