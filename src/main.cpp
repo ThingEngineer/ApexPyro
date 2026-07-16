@@ -1,3 +1,9 @@
+/*
+ * Licensed under the Apache License 2.0. See LICENSE.
+ * ApexPyro controls pyrotechnic hardware and is provided as-is, without warranty.
+ * Compiling, flashing, and operating this software is entirely at your own risk.
+ */
+
 #include <Arduino.h>
 #include <Wire.h>
 #include "config.h"
@@ -190,6 +196,8 @@ void setup() {
   wifiResetButtonTriggered = false;
   
   Serial.println("[BOOT] Safety GPIO states confirmed");
+  Serial.println("[BOOT] WARNING: ApexPyro controls pyrotechnic hardware.");
+  Serial.println("[BOOT] WARNING: No warranty. Validate wiring, firmware, and legal compliance before arming.");
   delay(100);
 
   // ========================================================================
