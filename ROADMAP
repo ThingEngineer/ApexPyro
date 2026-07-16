@@ -1,0 +1,17 @@
+# ApexPyro Roadmap
+
+- Improve controller role transfer so a Viewer can explicitly take the Controller role without relying on a page refresh. After the 'Controller' user clicks the role badge to unlock it, add a `data/control.svg` button to the left of the Viewer roles that when clicked shows a required confirmation modal before takeover, and show a toast to the previous controller when another user takes the role. Prevent multiple viewers from taking the Controller role at the same time (collision detection).
+
+- Add an active-high output GPIO for lighting an LED whenever any zone or group is firing. The LED should be on (GPIO HIGH) while any zone or group is firing, and off when no zones or groups are firing.
+
+- Sound an alarm on the device and in the app when the master arm is enabled and an enabled, unfired zone has a continuity error. Show which zone is alarming on the show page, show a toast message, allow the alarm to be silenced, and do not block firing while the alarm is active.
+
+- When starting an Auto Show, display the Approx. duration in the confirmation modal as MM:SS instead of seconds only.
+
+- When an Auto Show starts, display an overall show timer with both count-up and count-down timing.
+
+- In manual mode, when the first zone or group is fired, also display the same show timers for reference if any configured zone or group has associated timing.
+
+- On the builder page, only show zones that exist based on the boards that are actually detected. For example, if 2 boards are found show zones 1-32, if 4 boards are found show zones 1-64, and if only the second (I2C address) board is found show only zones 17-32.
+
+- On the builder page, add drag-and-drop reordering for zones and groups in addition to the existing up/down buttons. When a zone or group is moved, update the order and reflect the change in the UI without requiring a page refresh.
