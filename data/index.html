@@ -799,6 +799,7 @@
                     'Engages igniter power relay.',
                     'When armed, E-STOP appears in the sticky header for immediate shutdown.',
                     'If E-Stop is active, reset is required before re-arming.',
+                    'Arming requires acknowledging the pyrotechnic safety warning in the confirmation prompt.',
                     'Disarmed state blocks all firing actions.'
                 ]
             },
@@ -3063,7 +3064,7 @@
 
             showConfirm(
                 shouldArm ? 'Arm System' : 'Disarm System',
-                shouldArm ? 'Arming enables igniter power relay. Continue?' : 'Disarming will disable firing.',
+                shouldArm ? 'Arming enables igniter power relay. Dangerous pyrotechnic control software. No warranty. Use only in legal, controlled conditions. Continue?' : 'Disarming will disable firing.',
                 () => wsSend({ type: 'arm', state: shouldArm }),
                 () => { event.target.checked = !shouldArm; }
             );
