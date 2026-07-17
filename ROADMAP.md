@@ -27,3 +27,5 @@
 - On the builder page, only show zones that exist based on the boards that are actually detected. For example, if 2 boards are found show zones 1-32, if 4 boards are found show zones 1-64, and if only the second (I2C address) board is found show only zones 17-32.
 
 - On the builder page, add drag-and-drop reordering for zones and groups in addition to the existing up/down buttons. When a zone or group is moved, update the order and reflect the change in the UI without requiring a page refresh.
+
+- Explore adding HTTPS support, taking into consideration performance/latency trade-offs and resource constraints.
