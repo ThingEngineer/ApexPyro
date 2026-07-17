@@ -1,5 +1,17 @@
 # ApexPyro Roadmap
 
+## Hardware Development
+
+- Build BOM and detailed wiring instructions for ADC/MUX continuity scanning to detect good igniter, open or shorted circuits in the connected zones. Referance completed work in `docs/CONTINUITY_128_ROADMAP.md` and `docs/ESP32_DEVKITC_V4_WIRING.md` as well as the datasheets for the ADS1115 and CD74HCx4067 in `docs/datasheets`.
+
+- Develop detailed assembly instructions for the ADC/MUX continuity scanning setup, including step-by-step guidance for connecting the ADS1115 and CD74HCx4067 to the ESP32 DevKitC V4, ensuring proper signal routing and power connections. Include diagrams and photos where necessary.
+
+- Design schematic diagrams for the ApexPyro system, including the controller, ADC/MUX continuity scanning setup, relay boards, physical kill switch, and WiFi reset button. Ensure that the schematics clearly indicate all connections, component values, and any necessary annotations for assembly.
+
+- Build a complete BOM for the entire ApexPyro system, including all necessary components for the controller, ADC/MUX continuity scanning, and any additional peripherals. Include part numbers, quantities, and recommended suppliers for each component.
+
+## New Features and Improvements
+
 - Improve controller role transfer so a Viewer can explicitly take the Controller role without relying on a page refresh. After the 'Controller' user clicks the role badge to unlock it, add a `data/control.svg` button to the left of the Viewer roles that when clicked shows a required confirmation modal before takeover, and show a toast to the previous controller when another user takes the role. Prevent multiple viewers from taking the Controller role at the same time (collision detection).
 
 - Add an active-high output GPIO for lighting an LED whenever any zone or group is firing. The LED should be on (GPIO HIGH) while any zone or group is firing, and off when no zones or groups are firing.
