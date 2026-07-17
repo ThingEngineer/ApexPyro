@@ -18,6 +18,10 @@
 
 - Sound an alarm on the device and in the app when the master arm is enabled and an enabled, unfired zone has a continuity error. Show which zone is alarming on the show page, show a toast message, allow the alarm to be silenced, and do not block firing while the alarm is active.
 
+- In manual mode, add the ability to fire a group in step mode, where each step corresponds to firing one zone within the group sequentially based on the configured zone timing and order. Include controls to move to the next step, skip a step, or reset the sequence.
+
+- In Auto Show mode, include controls to move to the next step, skip a step, or reset the sequence.
+
 - When starting an Auto Show, display the Approx. duration in the confirmation modal as MM:SS instead of seconds only.
 
 - When an Auto Show starts, display an overall show timer with both count-up and count-down timing.
