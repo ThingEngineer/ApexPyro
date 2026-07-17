@@ -7,6 +7,7 @@ This project controls pyrotechnic hardware. Contributions are welcome, but safet
 ## Before You Start
 
 - Read the project overview in `README.md`.
+- Review `SECURITY.md` and `docs/SECURITY_ARCHITECTURE.md` for current security and safety architecture assumptions.
 - Review hardware wiring references in `docs/` before proposing hardware-adjacent behavior changes.
 - Keep proposed changes focused and scoped to a single intent when possible.
 
@@ -84,6 +85,8 @@ Style guidance is advisory, but consistency is expected:
 If behavior or operator workflow changes, update docs in the same PR:
 
 - `README.md` for high-level changes
+- `SECURITY.md` for reporting policy or security posture changes
+- `docs/SECURITY_ARCHITECTURE.md` for technical control-path changes (auth, role, E-Stop, WebSocket safety)
 - `docs/` for wiring or hardware procedure changes
 - `hardware/README` for hardware-design documentation scope
 

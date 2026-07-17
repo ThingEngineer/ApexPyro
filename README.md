@@ -4,7 +4,7 @@
 
 # ApexPyro
 
-ApexPyro is an ESP32-based fireworks controller with firmware, a browser-based control interface, continuity monitoring, and support for up to 128 firing zones. The project is intended for builders, operators, and contributors who need a documented starting point for assembling, flashing, validating, and extending the controller.
+ApexPyro is an ESP32-based fireworks controller with firmware, a browser-based control interface, continuity monitoring, and support for up to 128 firing zones (expandable). The project is intended for builders, operators, and contributors who need a documented starting point for assembling, flashing, validating, and extending the controller.
 
 ## Safety Notice
 
@@ -82,11 +82,13 @@ pio device monitor
 - [ApexPyro Web User Manual](docs/APEXPYRO_WEB_USER_MANUAL.md)
 - [ESP32 DevKitC V4 Wiring](docs/ESP32_DEVKITC_V4_WIRING.md)
 - [128-Zone Continuity Roadmap](docs/CONTINUITY_128_ROADMAP.md)
+- [Security Policy](SECURITY.md)
+- [Security Architecture](docs/SECURITY_ARCHITECTURE.md)
 - [Hardware Notes](hardware/README)
 
 ## Roadmap
 
-The project roadmap tracks planned product and UX improvements for upcoming iterations. See [ROADMAP](ROADMAP) for the current list.
+The project roadmap tracks planned product and UX improvements for upcoming iterations. See [ROADMAP](ROADMAP.md) for the current list.
 
 ## Firmware and UI Architecture
 
@@ -103,7 +105,7 @@ The project is organized around a few major runtime components:
 
 ## Contributing
 
-See the dedicated contributor guide: [CONTRIBUTING](CONTRIBUTING).
+See the dedicated contributor guide: [CONTRIBUTING](CONTRIBUTING.md).
 
 ## Licensing
 
