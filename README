@@ -42,7 +42,7 @@ For exact GPIO assignments and bus layout, use the wiring guide: [ESP32 DevKitC 
 - `src/`: firmware modules such as WiFi, relay management, continuity, storage, WebSocket handling, and show execution
 - `include/`: shared firmware headers and hardware configuration constants
 - `data/`: web UI assets served from LittleFS
-- `docs/`: wiring and hardware reference material
+- `docs/`: user and hardware reference documentation
 - `hardware/`: reserved for hardware-specific documentation and future design files
 
 ## Getting Started
@@ -79,6 +79,7 @@ pio device monitor
 
 ## Documentation
 
+- [ApexPyro Web User Manual](docs/APEXPYRO_WEB_USER_MANUAL.md)
 - [ESP32 DevKitC V4 Wiring](docs/ESP32_DEVKITC_V4_WIRING.md)
 - [128-Zone Continuity Roadmap](docs/CONTINUITY_128_ROADMAP.md)
 - [Hardware Notes](hardware/README)
